@@ -59,6 +59,6 @@ DEFAULT_SETTINGS = {
     "privacy": {"private_mode": False, "retention_days": 180, "restricted_zones": ["Estudio"], "forbidden_objects": ["Documentos personales"]},
     "personality": {"auto_emotions": True, "curiosity_level": 0.7, "affection": 0.9, "humor": 0.5, "handicap_speak": True},
     "autonomy": {"enabled": True, "explore_when_bored": True, "sleep_at_night": True, "return_base_battery": 22.0},
-    "hardware": {"ros2_bridge": False, "ros_domain_id": 0, "model_paths": {"llm": "~/models/baye-brain.gguf", "vision": "~/models/yolov8n.pt", "tts": "~/models/piper-es.pt", "stt": "~/models/whisper-base.bin"}},
+    "hardware": {"ros2_bridge": False, "ros_domain_id": 0, "base_pose": {"x": 0.0, "y": 0.0, "yaw": 0.0, "frame_id": "map"}, "model_paths": {"llm": "~/models/baye-brain.gguf", "vision": "~/models/yolov8n.onnx", "tts": "~/models/es_ES.onnx", "stt": "~/models/ggml-base.bin"}},
     "security": {"max_speed": 0.6, "stairs_allowed": False, "night_patrol": False, "child_lock": False},
 }

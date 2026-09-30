@@ -51,8 +51,8 @@ jobs:
               page.wait_for_timeout(300)
               page.fill("#prompt","recuerda que la prueba móvil funciona")
               page.click("#send-btn")
-              page.wait_for_function("document.querySelectorAll('.message').length >= 2", timeout=10000)
-              assert page.locator(".message").count() >= 2
+              page.wait_for_function("!document.querySelector('#send-btn').disabled && document.querySelectorAll('.message .bubble').length >= 2", timeout=10000)
+              assert page.locator(".message .bubble").count() >= 2
               page.locator(".message.user .message-tools [data-act=edit]").last.click()
               page.fill("#edit-text","recuerda que la prueba móvil funciona correctamente")
               page.click("#edit-save")
@@ -67,7 +67,7 @@ jobs:
               page.click("#drawer-close")
               page.fill("#prompt","Me gusta el color turquesa de prueba")
               page.click("#send-btn")
-              page.wait_for_function("document.querySelectorAll('.message').length >= 4", timeout=10000)
+              page.wait_for_function("!document.querySelector('#send-btn').disabled && document.querySelectorAll('.message .bubble').length >= 4", timeout=10000)
               page.click("[data-panel=learning]")
               page.wait_for_timeout(300)
               assert page.locator(".learning-card").count() >= 1

@@ -111,10 +111,6 @@ async def chat_send(payload: dict = Body(...)):
     thread_id = (payload.get("thread_id") or "default").strip()
     if not text:
         raise HTTPException(400, "mensaje vacío")
-    if not db.get_thread(thread_id):
-        db.create_thread(text[:48])
-        # create_thread creates its own id; callers should normally create a thread first.
-        # For backward compatibility, unknown ids are admitted by add_message/_touch_thread.
     msg = db.add_message("user", text, thread_id=thread_id)
     BAYE.hear(text)
     BAYE.set_activity("thinking", 2.0)

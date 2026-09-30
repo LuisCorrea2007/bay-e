@@ -7,6 +7,7 @@ from typing import Any
 
 from app.autonomy.skills import SKILLS
 from app.cognition.agents import operational_context
+from app.cognition.intents import handle as handle_intent
 from app.cognition.model_router import MODELS, ModelReply
 from app.memory.retrieval import context_block
 from app.world.model import snapshot as world_snapshot
@@ -37,14 +38,14 @@ def _explicit_memory_command(text: str) -> tuple[str, str] | None:
 
 
 async def respond(user_text: str, *, state: dict[str, Any], history: list[dict[str, Any]]) -> tuple[ModelReply, dict | None]:
-    command = _explicit_memory_command(user_text)
-    if command and command[0] == "remember":
-        mem = SKILLS.run("memory.remember", content=command[1], type="semantic")
+    intent = handle_intent(user_text)
+    if intent.handled:
+        created_memory = (intent.payload or {}).get("memory")
         return ModelReply(
-            text=f"Lo recordaré: {command[1]}",
+            text=intent.text,
             provider="skill",
-            model="memory.remember",
-        ), mem
+            model="deterministic-intent",
+        ), created_memory
 
     memories = context_block(user_text, limit=6)
     world = world_snapshot()

@@ -714,3 +714,52 @@ def privacy_enforce_retention():
     result = enforce_retention(days)
     broadcast_state()
     return {"ok": True, **result}
+
+# ================================================================ nodos móviles
+@router.get("/mobile/nodes")
+def mobile_nodes():
+    return {"nodes": db.list_mobile_nodes()}
+
+
+@router.post("/mobile/heartbeat")
+def mobile_heartbeat(payload: dict = Body(...)):
+    node_id = (payload.get("id") or "").strip()
+    if not node_id:
+        raise HTTPException(400, "id de dispositivo requerido")
+    capabilities = payload.get("capabilities") or {}
+    telemetry = payload.get("telemetry") or {}
+    node = db.upsert_mobile_node(
+        node_id,
+        name=(payload.get("name") or "Teléfono BAY-E")[:80],
+        platform=(payload.get("platform") or "android")[:30],
+        capabilities=capabilities,
+        telemetry=telemetry,
+    )
+    if capabilities.get("camera"):
+        BAYE.s["sensors"]["camera"] = True
+    if capabilities.get("microphone"):
+        BAYE.s["sensors"]["mic"] = True
+    BUS.publish("mobile.heartbeat", {"id": node_id, "telemetry": telemetry}, source="mobile")
+    return {"ok": True, "node": node, "core": {"version": APP_VERSION, "private_mode": BAYE.s["private_mode"]}}
+
+
+@router.post("/mobile/vision")
+async def mobile_vision(node_id: str = Form(...), frame: UploadFile = File(...)):
+    """Usa la cámara del teléfono como ojo remoto de BAY-E."""
+    if BAYE.s["private_mode"]:
+        raise HTTPException(403, "modo privado activo")
+    raw = await frame.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "fotograma demasiado grande")
+    try:
+        observation = VISION.observe_jpeg(raw)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    for det in observation.get("detections", []):
+        det["source_node"] = node_id
+        BAYE.perceive_vision(det)
+    BUS.publish("mobile.vision", {"id": node_id, "detections": len(observation.get("detections", []))}, source="mobile")
+    broadcast_state()
+    return observation

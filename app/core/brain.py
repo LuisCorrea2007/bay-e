@@ -24,6 +24,7 @@ from . import db
 from .config import APP_VERSION, DEFAULT_MODULES, DEFAULT_SETTINGS
 from app.autonomy.engine import AUTONOMY
 from app.cognition.conversation import respond as conversation_respond
+from app.adapters.robot import ROBOT
 from .events import BUS
 from .guardian import GUARDIAN
 from .safety import SAFETY
@@ -111,6 +112,8 @@ class BayeBrain:
             "connection": "software-only",
             "wifi": 0.0,
             "model_provider": "fallback",
+            "hardware_connected": False,
+            "robot_adapter": ROBOT.name,
             "sensors": {"mic": False, "camera": False, "tts": False, "memory": True},
             "emotions": emotions,
             "expression": {"emotion": "happy", "gaze": {"x": 0, "y": 0}},
@@ -155,6 +158,7 @@ class BayeBrain:
         return bool(
             modules.get("motors", {}).get("enabled")
             and self.s.get("settings", {}).get("hardware", {}).get("ros2_bridge")
+            and self.s.get("hardware_connected", False)
         )
 
     def set_activity(self, act: str, duration: float = 2.0) -> None:
@@ -205,6 +209,8 @@ class BayeBrain:
             "demo_mode": s.get("demo_mode", False),
             "guardian": GUARDIAN.snapshot(),
             "hardware_ready": self.hardware_ready,
+            "hardware_connected": s.get("hardware_connected", False),
+            "robot_adapter": s.get("robot_adapter", "offline"),
             "model_provider": s.get("model_provider", "fallback"),
             "settings": s["settings"],
             "modules": s["modules"],
@@ -321,17 +327,33 @@ class BayeBrain:
                 db.log("warn", "safety", "Orden de movimiento bloqueada", decision.code)
                 BUS.publish("robot.motion_blocked", decision.to_dict(), source="safety")
                 return {"ok": False, "blocked": True, "reason": decision.code, "cmd": name}
-            if decision.normalized["dir"] != "stop":
-                s["activity"] = "moving"
-                s["activity_until"] = time.time() + 2.5
-                s["emotions"]["activity"] = _clamp(s["emotions"]["activity"] + 0.2)
-                s["reason"] = f"Movimiento físico autorizado: {decision.normalized['dir']}."
-            db.log("debug", "motors", f"Orden de movimiento: {decision.normalized['dir']}", json.dumps(p))
-            BUS.publish("robot.motion_requested", decision.to_dict(), source="brain")
+            try:
+                if decision.normalized["dir"] == "stop":
+                    if s.get("hardware_connected"):
+                        ROBOT.move("stop")
+                else:
+                    ROBOT.move(decision.normalized["dir"])
+                    s["activity"] = "moving"
+                    s["activity_until"] = time.time() + 2.5
+                    s["emotions"]["activity"] = _clamp(s["emotions"]["activity"] + 0.2)
+                    s["reason"] = f"Movimiento físico autorizado: {decision.normalized['dir']}."
+                db.log("debug", "motors", f"Orden de movimiento: {decision.normalized['dir']}", json.dumps(p))
+                BUS.publish("robot.motion_requested", decision.to_dict(), source="brain")
+            except Exception as exc:
+                s["movement"] = {"dir": "stop", "since": time.time()}
+                s["last_event"] = "El adaptador físico rechazó el movimiento."
+                db.log("error", "motors", "Fallo al ejecutar movimiento físico", repr(exc))
+                GUARDIAN.report("robot", "degraded", repr(exc))
+                return {"ok": False, "blocked": True, "reason": "adapter_failure", "cmd": name}
         elif name == "look":
             s["head"] = {"yaw": _clamp(float(p.get("yaw", 0)), -1, 1),
                          "pitch": _clamp(float(p.get("pitch", 0)), -1, 1)}
             s["expression"]["gaze"] = {"x": s["head"]["yaw"], "y": -s["head"]["pitch"]}
+            if self.hardware_ready:
+                try:
+                    ROBOT.look(s["head"]["yaw"], s["head"]["pitch"])
+                except Exception as exc:
+                    GUARDIAN.report("robot", "degraded", repr(exc))
         elif name == "toggle_autonomy":
             s["autonomy"] = bool(p.get("on", not s["autonomy"]))
             db.log("info", "control", f"Autonomía {'activada' if s['autonomy'] else 'desactivada'}", "")
@@ -340,7 +362,14 @@ class BayeBrain:
             if ack.get("blocked"):
                 s["last_event"] = "No puedo volver a una base física hasta que navegación y motores estén conectados."
                 return ack
-            s["last_event"] = "Navegación a la base solicitada."
+            try:
+                base = s["settings"].get("hardware", {}).get("base_pose", {"x": 0.0, "y": 0.0, "yaw": 0.0})
+                ROBOT.navigate(base)
+                s["last_event"] = "Objetivo de retorno a base enviado a Nav2."
+            except Exception as exc:
+                s["last_event"] = "No pude enviar el objetivo a la base."
+                GUARDIAN.report("robot", "degraded", repr(exc))
+                return {"ok": False, "blocked": True, "reason": "navigation_unavailable", "cmd": name}
         elif name == "set_emotion_mode":
             self.emotion_mode = "manual" if p.get("mode") == "manual" else "auto"
         elif name == "adjust_emotion":
@@ -407,6 +436,26 @@ class BayeBrain:
         s = self.s
         e = s["emotions"]
         now = time.time()
+
+        # telemetría física: nunca se inventa. Si existe, reemplaza el estado local.
+        try:
+            telemetry = ROBOT.telemetry()
+            s["hardware_connected"] = bool(telemetry.connected)
+            s["robot_adapter"] = ROBOT.name
+            if telemetry.connected:
+                s["connection"] = "robot"
+                GUARDIAN.report("robot", "ok", f"adapter={ROBOT.name}")
+                if telemetry.battery is not None:
+                    s["battery"] = _clamp(float(telemetry.battery), 0, 100)
+                    s["battery_source"] = "hardware"
+                s["charging"] = bool(telemetry.charging)
+                if telemetry.room:
+                    s["position"]["room"] = telemetry.room
+            else:
+                s["connection"] = "software-only"
+        except Exception as exc:
+            s["hardware_connected"] = False
+            GUARDIAN.report("robot", "degraded", repr(exc))
 
         # expiración de actividades temporales
         if s["activity"] != "idle" and now > s["activity_until"] and not self.is_sleepish:

@@ -49,7 +49,7 @@ async function newThread(){const r=await api("POST","/api/chat/threads",{title:"
 async function loadMessages(){const r=await api("GET","/api/chat/history?thread_id="+encodeURIComponent(App.thread)+"&limit=500");$("#messages").innerHTML="";for(const m of r.messages||[])renderMessage(m);setEmpty();scrollBottom()}
 
 async function send(text){text=(text||$("#prompt").value).trim();if(!text||App.busy)return;App.busy=true;$("#send-btn").disabled=true;$("#prompt").value="";grow();renderMessage({id:"temp_"+Date.now(),role:"user",content:text});thinking(true);$("#activity").textContent="BAY-E está pensando…";for(const f of Object.values(App.faces))Face.update(f,{thinking:true,emotion:"thinking"});
-  try{const r=await api("POST","/api/chat/send",{text,thread_id:App.thread});thinking(false);await loadMessages();await loadThreads();$("#provider").textContent="IA · "+(r.model?.provider||"—");if(App.state?.settings?.audio?.tts_enabled!==false)speak(r.baye.content);await refreshState()}
+  try{const r=await api("POST","/api/chat/send",{text,thread_id:App.thread});thinking(false);await loadMessages();await loadThreads();$("#provider").textContent="IA · "+(r.model?.provider||"—");if(r.learning_candidate?.status==="pending"){toast("BAY-E detectó algo que podría aprender · revísalo en Aprendizaje");await refreshLearningBadge()}if(App.state?.settings?.audio?.tts_enabled!==false)speak(r.baye.content);await refreshState()}
   catch(e){thinking(false);toast("Error al responder");console.error(e)}
   finally{App.busy=false;$("#send-btn").disabled=false;$("#activity").textContent="Listo"}
 }
@@ -84,6 +84,37 @@ function connectWS(){
 
 async function loadRules(){const r=await api("GET","/api/mind/rules");$("#rule-list").innerHTML="";for(const x of r.rules||[]){const e=document.createElement("article");e.className="rule-card";e.innerHTML=`<header><span class="kind">${esc(x.kind)} · p${x.priority}</span><label><input type="checkbox" ${x.enabled?"checked":""}> activa</label></header><p>${esc(x.content)}</p><footer><span>${x.enabled?"Aplicándose":"Desactivada"}</span><button class="danger">Borrar</button></footer>`;e.querySelector("input").onchange=ev=>api("PUT","/api/mind/rules/"+x.id,{enabled:ev.target.checked}).then(loadRules);e.querySelector(".danger").onclick=()=>api("DELETE","/api/mind/rules/"+x.id).then(loadRules);$("#rule-list").append(e)}}
 
+async function refreshLearningBadge(){
+  try{
+    const r=await api("GET","/api/learning/candidates?status=pending&limit=100");
+    const n=(r.candidates||[]).length,b=$("#learning-badge");
+    b.textContent=String(n);b.hidden=n===0;
+    $("#learning-pending").textContent=String(n);
+    return n;
+  }catch{return 0}
+}
+
+async function loadLearning(){
+  try{
+    const [pending,approved]=await Promise.all([
+      api("GET","/api/learning/candidates?status=pending&limit=100"),
+      api("GET","/api/learning/candidates?status=approved&limit=100")
+    ]);
+    const items=pending.candidates||[],root=$("#learning-list");
+    $("#learning-pending").textContent=String(items.length);
+    $("#learning-approved").textContent=String((approved.candidates||[]).length);
+    const badge=$("#learning-badge");badge.textContent=String(items.length);badge.hidden=items.length===0;
+    root.innerHTML="";
+    for(const x of items){
+      const e=document.createElement("article");e.className="learning-card";
+      e.innerHTML=`<header><span class="learn-kind">${esc(x.kind)}</span><span class="learn-confidence">${Math.round((x.confidence||0)*100)}% confianza</span></header><p>${esc(x.content)}</p><small>${esc(x.reason||"Requiere revisión")}</small><footer><button data-a="reject">No aprender</button><button data-a="approve" class="approve">Recordar</button></footer>`;
+      e.onclick=async ev=>{const b=ev.target.closest("button");if(!b)return;try{await api("POST","/api/learning/candidates/"+encodeURIComponent(x.id)+"/resolve",{action:b.dataset.a});toast(b.dataset.a==="approve"?"Aprendido con tu aprobación":"Propuesta descartada");await loadLearning();if(b.dataset.a==="approve"&&App.panel==="memory")await loadMemory()}catch{toast("No pude resolver este aprendizaje")}};
+      root.append(e);
+    }
+    if(!items.length)root.innerHTML='<div class="learning-empty"><span>●────●</span><strong>Todo revisado.</strong><p>No tengo recuerdos pendientes de tu aprobación.</p></div>';
+  }catch{toast("No pude cargar la bandeja de aprendizaje")}
+}
+
 async function loadMemory(){const q=$("#memory-search").value,type=$("#memory-type").value;const r=await api("GET",`/api/memories?q=${encodeURIComponent(q)}&type=${encodeURIComponent(type)}`);$("#memory-list").innerHTML="";for(const m of (r.memories||[]).slice(0,120)){const e=document.createElement("article");e.className="info-card";e.innerHTML=`<header><small>${esc(m.type)} · ${Math.round((m.confidence||0)*100)}%</small><span>${m.pinned?"★":""}</span></header><p>${esc(m.content)}</p><footer><span>${esc(m.source||"")}</span><div><button data-a="pin">${m.pinned?"Desfijar":"Fijar"}</button><button data-a="edit">Editar</button><button data-a="delete" class="danger-text">Borrar</button></div></footer>`;e.onclick=async ev=>{const b=ev.target.closest("button");if(!b)return;try{if(b.dataset.a==="pin")await api("POST",`/api/memories/${m.id}/pin`,{on:!m.pinned});if(b.dataset.a==="edit"){const v=prompt("Corregir recuerdo:",m.content);if(v&&v.trim())await api("POST",`/api/memories/${m.id}/correct`,{content:v.trim()})}if(b.dataset.a==="delete"&&confirm("¿Borrar este recuerdo?"))await api("DELETE",`/api/memories/${m.id}`);await loadMemory()}catch{toast("No pude modificar el recuerdo")}};$("#memory-list").append(e)}if(!$("#memory-list").children.length)$("#memory-list").innerHTML='<div class="info-card"><p>Sin resultados.</p></div>'}
 
 async function loadTasks(){const r=await api("GET","/api/tasks");$("#task-list").innerHTML="";for(const t of r.tasks||[]){const e=document.createElement("article");e.className="info-card";e.innerHTML=`<header><small>${esc(t.status)}${t.repeat?" · "+esc(t.repeat):""}</small><span></span></header><p><strong>${esc(t.title)}</strong></p>${t.description?`<p>${esc(t.description)}</p>`:""}<footer><span>${t.scheduled_at?new Date(t.scheduled_at*1000).toLocaleString():"Sin fecha"}</span><div><button data-a="toggle">${t.status==="paused"?"Reanudar":"Pausar"}</button><button data-a="done">Hecha</button><button data-a="delete" class="danger-text">Borrar</button></div></footer>`;e.onclick=async ev=>{const b=ev.target.closest("button");if(!b)return;if(b.dataset.a==="toggle")await api("PUT",`/api/tasks/${t.id}`,{status:t.status==="paused"?"pending":"paused"});if(b.dataset.a==="done")await api("PUT",`/api/tasks/${t.id}`,{status:"done"});if(b.dataset.a==="delete"&&confirm("¿Borrar esta tarea?"))await api("DELETE",`/api/tasks/${t.id}`);await loadTasks()};$("#task-list").append(e)}if(!$("#task-list").children.length)$("#task-list").innerHTML='<div class="info-card"><p>No hay tareas todavía.</p></div>'}
@@ -96,7 +127,7 @@ async function loadDevices(){try{const r=await api("GET","/api/mobile/nodes");co
 async function loadLogs(){try{const r=await api("GET","/api/logs?limit=40");$("#log-list").innerHTML=(r.logs||[]).map(x=>`<div class="info-card"><small>${new Date(x.ts*1000).toLocaleTimeString()} · ${esc(x.level)} · ${esc(x.module)}</small><p>${esc(x.human||x.technical||"evento")}</p></div>`).join("")}catch{}}
 async function loadSystem(){try{const [d,m]=await Promise.all([api("GET","/api/diagnostics"),api("GET","/api/modules")]);const rows=[["Guardian",d.guardian?.overall],["Modelo",d.models?.last_provider],["OpenCV",d.vision?.opencv?"ok":"offline"],["STT",d.audio?.stt?"ok":"offline"],["TTS",d.audio?.tts?"ok":"offline"],["Robot",d.robot?.connected?"ok":"offline"]];$("#diagnostics").innerHTML=rows.map(([k,v])=>`<div class="info-card"><small>${esc(k)}</small><p class="${v==="ok"?"status-ok":v==="offline"?"status-off":"status-warn"}">${esc(v||"unknown")}</p></div>`).join("");$("#module-list").innerHTML=(m.modules||[]).map(x=>`<div class="info-card"><header><small>${esc(x.name)} · ${esc(x.version)}</small><input type="checkbox" data-module="${esc(x.id)}" ${x.enabled?"checked":""}></header><p>${esc(x.desc||"")}</p></div>`).join("");$$("[data-module]",$("#module-list")).forEach(x=>x.onchange=async()=>{await api("POST",`/api/modules/${x.dataset.module}/toggle`,{on:x.checked});await refreshState()});await loadLogs()}catch{}}
 
-function openDrawer(name){App.panel=name;$("#drawer").classList.add("open");$$(".drawer-view").forEach(v=>v.classList.toggle("active",v.dataset.view===name));$("#drawer-title").textContent={mind:"Corazón y mente",memory:"Memoria",tasks:"Tareas y rutinas",world:"Casa y mundo",vision:"Visión",control:"Cuerpo y control",devices:"Dispositivos",system:"Sistema y privacidad"}[name]||"BAY-E";if(name==="mind")loadRules();if(name==="memory")loadMemory();if(name==="tasks")loadTasks();if(name==="world")loadWorld();if(name==="vision")loadVision();if(name==="devices")loadDevices();if(name==="system")loadSystem()}
+function openDrawer(name){App.panel=name;$("#drawer").classList.add("open");$$(".drawer-view").forEach(v=>v.classList.toggle("active",v.dataset.view===name));$("#drawer-title").textContent={mind:"Corazón y mente",learning:"Aprendizaje",memory:"Memoria",tasks:"Tareas y rutinas",world:"Casa y mundo",vision:"Visión",control:"Cuerpo y control",devices:"Dispositivos",system:"Sistema y privacidad"}[name]||"BAY-E";if(name==="mind")loadRules();if(name==="learning")loadLearning();if(name==="memory")loadMemory();if(name==="tasks")loadTasks();if(name==="world")loadWorld();if(name==="vision")loadVision();if(name==="devices")loadDevices();if(name==="system")loadSystem()}
 
 async function command(cmd,payload={}){try{const r=await api("POST","/api/command",{cmd,payload});if(r.blocked)toast("Bloqueado por seguridad: "+(r.reason||"acción no disponible"));else toast("Comando aceptado");await refreshState();return r}catch{toast("No pude ejecutar el comando")}}
 function setupSpeech(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$("#voice-btn").onclick=()=>toast("Dictado no disponible en este navegador");return}const r=new SR();r.lang="es-ES";r.interimResults=false;r.onstart=()=>{$("#activity").textContent="Escuchando…";$("#voice-btn").classList.add("listening");for(const f of Object.values(App.faces))Face.update(f,{listening:true,emotion:"attentive"})};r.onend=()=>{$("#activity").textContent="Listo";$("#voice-btn").classList.remove("listening");refreshState()};r.onresult=e=>send(e.results[0][0].transcript);r.onerror=()=>toast("No pude escuchar el micrófono");$("#voice-btn").onclick=()=>{try{r.start()}catch{}}}
@@ -114,5 +145,5 @@ document.addEventListener("DOMContentLoaded",async()=>{
   $$(".mode-grid [data-mode]").forEach(b=>b.onclick=()=>command("set_mode",{mode:b.dataset.mode}));$$("[data-move]").forEach(b=>b.onclick=()=>command("move",{dir:b.dataset.move}));$("#return-base").onclick=()=>command("return_base");$("#toggle-autonomy").onclick=()=>command("toggle_autonomy",{on:!App.state?.autonomy});$("#estop").onclick=()=>command("emergency_stop");
   $("#private-mode").onchange=async e=>{await api("PUT","/api/settings/privacy",{private_mode:e.target.checked});await refreshState()};$("#autonomy-setting").onchange=async e=>{await api("PUT","/api/settings/autonomy",{enabled:e.target.checked});await refreshState()};
   $("#backup-btn").onclick=async()=>{const r=await api("POST","/api/backups",{});toast("Backup creado: "+String(r.file||"").split(/[\\/]/).pop())};$("#retention-btn").onclick=async()=>{const r=await api("POST","/api/privacy/enforce-retention",{});toast("Retención aplicada · "+(r.deleted||0)+" eliminadas")};$("#purge-btn").onclick=async()=>{if(!confirm("Esto borrará todas las memorias y perfiles biométricos locales. ¿Continuar?"))return;await api("POST","/api/privacy/purge",{mode:"all"});toast("Memoria eliminada");loadMemory()};
-  setupSpeech();connectWS();await loadThreads();if(!App.threads.some(t=>t.id===App.thread))App.thread=App.threads[0]?.id||"default";await loadMessages();await refreshState();setInterval(refreshState,15000);
+  setupSpeech();connectWS();await loadThreads();if(!App.threads.some(t=>t.id===App.thread))App.thread=App.threads[0]?.id||"default";await loadMessages();await refreshState();await refreshLearningBadge();setInterval(refreshState,15000);setInterval(refreshLearningBadge,30000);
 });

@@ -26,7 +26,7 @@ body{
   justify-content:center;min-height:174px
 }
 .hero::after{display:none}.hero-info{display:none}.hero-face{gap:8px}
-#face-mount-main .baye-face{filter:saturate(.25) contrast(1.05)}
+#face-mount-main .face-shell{filter:saturate(.18) contrast(1.06)}
 .fc-name{color:#f5f5f5;text-shadow:none;font-size:13px}.fc-state{color:#737373}
 .views{max-width:980px;margin:0 auto}
 .view{animation:none}
@@ -35,7 +35,7 @@ body{
 body[data-view="chat"] .views{max-width:900px}
 body[data-view="chat"] .hero{min-height:180px;padding-top:30px}
 body:not([data-view="chat"]) .hero{min-height:104px;padding:18px 0 6px}
-body:not([data-view="chat"]) #face-mount-main .baye-face{transform:scale(.66);transform-origin:center}
+body:not([data-view="chat"]) #face-mount-main .face-shell{transform:scale(.66);transform-origin:center}
 body:not([data-view="chat"]) .hero-face{height:92px}
 .chat-wrap.card{
   min-height:calc(100vh - 205px);padding:0;background:transparent;border:0;box-shadow:none;

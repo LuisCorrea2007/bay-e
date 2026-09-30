@@ -21,6 +21,12 @@ from ..core.config import APP_VERSION, BACKUP_DIR, CAM_DIR, DEFAULT_SETTINGS
 from ..core.ws import broadcast_state
 from ..core.events import BUS
 from ..core.guardian import GUARDIAN
+from ..adapters.audio import AUDIO
+from ..adapters.vision import VISION
+from ..autonomy.skills import SKILLS
+from ..cognition.model_router import MODELS
+from ..health.service import record as health_record, trend as health_trend
+from ..world.model import snapshot as world_snapshot
 
 router = APIRouter(prefix="/api")
 
@@ -47,17 +53,19 @@ def chat_history(limit: int = Query(200, ge=1, le=1000)):
 
 
 @router.post("/chat/send")
-def chat_send(payload: dict = Body(...)):
-    """Envío por REST (fallback sin WS): responde de forma síncrona."""
+async def chat_send(payload: dict = Body(...)):
+    """REST fallback using the same real conversation engine as WebSocket."""
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "mensaje vacío")
     msg = db.add_message("user", text)
-    reply, emotion = BAYE.reply(text)
+    BAYE.hear(text)
+    BAYE.set_activity("thinking", 2.0)
+    reply, emotion, model_reply = await BAYE.generate_reply(text)
     bmsg = db.add_message("baye", reply, emotion=emotion)
-    BAYE.set_activity("speaking", 2.5)
+    BAYE.set_activity("speaking", max(2.0, len(reply) / 12))
     broadcast_state()
-    return {"user": msg, "baye": bmsg}
+    return {"user": msg, "baye": bmsg, "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded}}
 
 
 @router.post("/chat/flag")
@@ -379,3 +387,73 @@ def core_events(limit: int = Query(100, ge=1, le=500)):
 @router.get("/guardian")
 def guardian_state():
     return GUARDIAN.snapshot()
+
+# ================================================================ capacidades reales
+@router.get("/models")
+def models_state():
+    return {
+        "last_provider": MODELS.last_provider,
+        "providers": [p.name for p in MODELS.providers],
+        "fallback": MODELS.fallback.name,
+    }
+
+
+@router.get("/skills")
+def skills_list():
+    return {"skills": SKILLS.list()}
+
+
+@router.get("/world")
+def world_get():
+    return world_snapshot()
+
+
+@router.get("/vision/status")
+def vision_status():
+    return {"available": VISION.available, "private_mode": BAYE.s["private_mode"], "camera_enabled": BAYE.s["sensors"]["camera"]}
+
+
+@router.post("/vision/observe")
+async def vision_observe(frame: UploadFile = File(...)):
+    if BAYE.s["private_mode"]:
+        raise HTTPException(403, "modo privado activo")
+    if not BAYE.s["sensors"]["camera"]:
+        raise HTTPException(409, "sensor de cámara desactivado")
+    raw = await frame.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "fotograma demasiado grande")
+    try:
+        observation = VISION.observe_jpeg(raw)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    for det in observation.get("detections", []):
+        BAYE.perceive_vision(det)
+    broadcast_state()
+    return observation
+
+
+@router.get("/audio/status")
+def audio_status():
+    return {"stt_available": AUDIO.stt_available, "tts_available": AUDIO.tts_available}
+
+
+@router.post("/health/measurements")
+def health_measurement(payload: dict = Body(...)):
+    if not payload.get("metric") or payload.get("value") is None or not payload.get("unit"):
+        raise HTTPException(400, "metric, value y unit son obligatorios")
+    item = health_record(
+        str(payload["metric"]),
+        float(payload["value"]),
+        str(payload["unit"]),
+        source=str(payload.get("source", "user")),
+        person_id=str(payload.get("person_id", "")),
+        quality=float(payload.get("quality", 1.0)),
+    )
+    return {"ok": True, "measurement": item, "notice": "Registro descriptivo; no constituye diagnóstico."}
+
+
+@router.get("/health/trend/{metric}")
+def health_metric_trend(metric: str, person_id: str = "", limit: int = Query(30, ge=1, le=500)):
+    return health_trend(metric, person_id=person_id, limit=limit)

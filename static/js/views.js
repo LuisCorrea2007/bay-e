@@ -423,12 +423,17 @@ const Views = (() => {
   const vision = {
     dets: [],
     current: null,
+    stream: null,
+    timer: null,
+    video: null,
+    canvas: null,
     mounted: false,
     mount() {
       if (this.mounted) return; this.mounted = true;
       Net.on("detection", (m) => this.onDet(m.detection));
-      $("#cam-toggle").addEventListener("click", () => {
-        const on = !(STATE?.sensors?.camera); Net.command("sensor", { sensor: "camera", on });
+      $("#cam-toggle").addEventListener("click", async () => {
+        if (this.stream) await this.stopCamera();
+        else await this.startCamera();
       });
       $("#det-save").addEventListener("click", () => {
         if (!this.current) return toast("no hay detección activa", true);
@@ -443,6 +448,57 @@ const Views = (() => {
         this.dets = this.dets.filter((d) => d.id !== this.current?.id); this.current = null; this.render(); toast("Detección ignorada");
       });
     },
+    async startCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        toast("Este navegador no permite acceso a cámara", true); return;
+      }
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" },
+          audio: false,
+        });
+        this.video = document.createElement("video");
+        this.video.srcObject = this.stream;
+        this.video.muted = true;
+        this.video.playsInline = true;
+        await this.video.play();
+        this.canvas = document.createElement("canvas");
+        Net.command("sensor", { sensor: "camera", on: true });
+        $("#feed-off").hidden = true;
+        this.timer = setInterval(() => this.captureAndObserve(), 900);
+        await this.captureAndObserve();
+        toast("Cámara real conectada 👁️");
+      } catch (e) {
+        this.stream = null;
+        toast("No pude abrir la cámara: " + (e?.message || e), true);
+      }
+    },
+    async stopCamera() {
+      clearInterval(this.timer); this.timer = null;
+      if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null; this.video = null; this.canvas = null;
+      Net.command("sensor", { sensor: "camera", on: false });
+      $("#feed-img").src = "/static/camera_sim.svg";
+      toast("Cámara desconectada");
+    },
+    async captureAndObserve() {
+      if (!this.stream || !this.video || this.video.readyState < 2 || !this.canvas) return;
+      const maxW = 720;
+      const scale = Math.min(1, maxW / this.video.videoWidth);
+      this.canvas.width = Math.max(1, Math.round(this.video.videoWidth * scale));
+      this.canvas.height = Math.max(1, Math.round(this.video.videoHeight * scale));
+      const ctx = this.canvas.getContext("2d");
+      ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+      $("#feed-img").src = this.canvas.toDataURL("image/jpeg", .72);
+      this.canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const fd = new FormData(); fd.append("frame", blob, "frame.jpg");
+        try {
+          const r = await fetch("/api/vision/observe", { method: "POST", body: fd });
+          if (!r.ok && r.status !== 409) console.warn("vision", await r.text());
+        } catch (e) { console.warn("vision observe", e); }
+      }, "image/jpeg", .72);
+    },
     onDet(d) {
       this.dets.unshift(d); if (this.dets.length > 30) this.dets.pop();
       this.current = d; this.render();
@@ -450,6 +506,7 @@ const Views = (() => {
     refresh(s) {
       STATE = s;
       const off = !s.sensors.camera || s.private_mode;
+      if (s.private_mode && this.stream) this.stopCamera();
       $("#feed-off").hidden = !off;
       $("#feed-img").style.opacity = off ? ".15" : "1";
     },

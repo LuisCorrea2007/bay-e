@@ -481,6 +481,20 @@ class BayeBrain:
             s["current_task"] = g["label"]
             s["last_event"] = f"Demo: completado objetivo {g['label']}."
 
+        # autonomía: propone intenciones; la ejecución física queda en adapters/ROS2
+        proposed = AUTONOMY.propose(self.snapshot())
+        if proposed:
+            needs_body = bool(proposed.get("requires_physical_body"))
+            if needs_body and not self.hardware_ready:
+                s["last_thought"] = "Tengo iniciativa para explorar, pero esperaré a que mi cuerpo y navegación estén conectados."
+                s["reason"] = "La autonomía cognitiva puede crear intención; Safety Governor exige hardware real para ejecutarla."
+                s["next_decision"] = "Seguir observando y aprendiendo sin fingir desplazamientos."
+            elif not any(g.get("id") == proposed["id"] for g in s["goal_queue"]):
+                s["goal_queue"].append(proposed)
+                s["last_event"] = f"Nuevo objetivo autónomo: {proposed['label']}."
+                s["reason"] = "Objetivo generado por estado interno y políticas de autonomía."
+                s["next_decision"] = "Preparar el siguiente paso seguro."
+
         # pensamientos aleatorios ---------------------------------------------
         if random.random() < 0.06:
             s["last_thought"] = random.choice(THOUGHTS)
@@ -511,6 +525,24 @@ class BayeBrain:
                 q = self.broadcast(self.snapshot())
         except Exception:
             pass
+
+    async def generate_reply(self, text: str):
+        """Generate a reply using local model routing + confirmed memory/world context."""
+        model_reply, created_memory = await conversation_respond(
+            text,
+            state=self.snapshot(),
+            history=db.list_messages(80),
+        )
+        self.s["model_provider"] = model_reply.provider
+        if created_memory:
+            self.s["last_memory"] = created_memory["content"]
+            self.s["learning"] = f"Recuerdo confirmado: {created_memory['content']}"
+            BUS.publish("memory.created", created_memory, source="conversation")
+        emotion = "curious" if model_reply.provider == "skill" else (
+            "thinking" if model_reply.degraded else
+            "happy" if self.s["emotions"]["mood"] > 0.65 else "neutral_face"
+        )
+        return model_reply.text, emotion, model_reply
 
     # ============================================================ PERSONALIDAD
     def reply(self, user_text: str) -> tuple[str, str]:
@@ -606,9 +638,10 @@ class BayeBrain:
         emit({"type": "indicator", "value": "thinking"})
         await asyncio.sleep(random.uniform(0.9, 1.8))
 
-        reply_text, emotion = self.reply(text)
+        reply_text, emotion, model_reply = await self.generate_reply(text)
         self.set_activity("speaking", max(2.0, len(reply_text) / 12))
         emit({"type": "indicator", "value": "speaking"})
+        emit({"type": "model", "provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded})
 
         bmsg = db.add_message("baye", reply_text, emotion=emotion)
         # tipado progresivo simulando voz

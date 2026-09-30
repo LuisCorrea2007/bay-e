@@ -169,11 +169,26 @@ const Views = (() => {
         if (a === "task") { toast("Convertido en tarea ✅"); tasks.load(); }
       } catch (e) { toast("no se pudo aplicar", true); }
     },
-    speakOut(text) {
+    async speakOut(text) {
+      try {
+        if (this._audioStatus === undefined) this._audioStatus = await Net.api("GET", "/api/audio/status");
+        if (this._audioStatus?.tts_available) {
+          const r = await fetch("/api/audio/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+          if (r.ok) {
+            const url = URL.createObjectURL(await r.blob());
+            const audio = new Audio(url);
+            audio.onplay = () => { this.indicator("speaking"); Net.command("sensor", { sensor: "tts", on: true }); };
+            audio.onended = () => { this.indicator(null); URL.revokeObjectURL(url); };
+            audio.onerror = () => { this.indicator(null); URL.revokeObjectURL(url); };
+            await audio.play();
+            return;
+          }
+        }
+      } catch (e) { console.warn("Piper TTS", e); }
       if (!("speechSynthesis" in window)) return;
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "es-ES"; u.rate = .96; u.pitch = 1.08;
-      u.onstart = () => this.indicator("speaking");
+      u.onstart = () => { this.indicator("speaking"); Net.command("sensor", { sensor: "tts", on: true }); };
       u.onend = () => this.indicator(null);
       u.onerror = () => this.indicator(null);
       speechSynthesis.cancel(); speechSynthesis.speak(u);
@@ -189,6 +204,7 @@ const Views = (() => {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { toast("Tu navegador no soporta dictado por voz", true); return; }
       const rec = new SR(); rec.lang = "es-ES"; rec.interimResults = false;
+      Net.command("sensor", { sensor: "mic", on: true });
       $("#chat-mic").classList.add("rec"); $("#hearing").hidden = false;
       rec.onresult = (e) => { $("#chat-input").value = e.results[0][0].transcript; this.submit(); };
       rec.onerror = () => { toast("no te escuché bien, intenta otra vez", true); };
@@ -427,6 +443,7 @@ const Views = (() => {
     timer: null,
     video: null,
     canvas: null,
+    uploadBusy: false,
     mounted: false,
     mount() {
       if (this.mounted) return; this.mounted = true;
@@ -491,12 +508,14 @@ const Views = (() => {
       ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
       $("#feed-img").src = this.canvas.toDataURL("image/jpeg", .72);
       this.canvas.toBlob(async (blob) => {
-        if (!blob) return;
+        if (!blob || this.uploadBusy) return;
+        this.uploadBusy = true;
         const fd = new FormData(); fd.append("frame", blob, "frame.jpg");
         try {
           const r = await fetch("/api/vision/observe", { method: "POST", body: fd });
           if (!r.ok && r.status !== 409) console.warn("vision", await r.text());
         } catch (e) { console.warn("vision observe", e); }
+        finally { this.uploadBusy = false; }
       }, "image/jpeg", .72);
     },
     onDet(d) {

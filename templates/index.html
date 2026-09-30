@@ -63,11 +63,12 @@
 
     <div class="composer-zone">
       <div class="composer">
-        <button class="voice-btn" id="voice-btn" title="Hablar" aria-label="Hablar">◉</button>
+        <button class="voice-btn" id="voice-btn" title="Hablar una vez" aria-label="Hablar una vez">◉</button>
+        <button class="wake-btn" id="wake-btn" title="Activar modo manos libres" aria-label="Modo manos libres" aria-pressed="false">BE</button>
         <textarea id="prompt" rows="1" maxlength="8000" placeholder="Escribe a BAY-E…"></textarea>
         <button class="send-btn" id="send-btn" title="Enviar" aria-label="Enviar">↑</button>
       </div>
-      <div class="composer-foot"><span id="activity">Listo</span><span>Las acciones físicas siempre pasan por Safety Governor.</span></div>
+      <div class="composer-foot"><span id="activity">Listo</span><span id="wake-status">Manos libres · apagado</span><span>Las acciones físicas siempre pasan por Safety Governor.</span></div>
     </div>
   </main>
 

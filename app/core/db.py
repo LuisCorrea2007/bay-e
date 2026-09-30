@@ -225,7 +225,7 @@ def merge_memories(primary_id: str, secondary_id: str) -> Optional[dict]:
     p, s = get_memory(primary_id), get_memory(secondary_id)
     if not p or not s:
         return None
-    rel = list(set(p["relations"] + [primary_id]))
+    rel = list(set(p["relations"] + [secondary_id]))
     out = update_memory(primary_id,
                         detail=(p["detail"] + ("\n" if p["detail"] else "") + f"[fusionada] {s['content']}").strip(),
                         relations=rel,

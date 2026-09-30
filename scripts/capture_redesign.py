@@ -7,7 +7,13 @@ OUT.mkdir(exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
+    page.on("pageerror", lambda exc: print("PAGEERROR:", exc))
+    page.on("console", lambda msg: print("CONSOLE:", msg.type, msg.text))
     page.goto("http://127.0.0.1:8300", wait_until="networkidle")
+    print("READY:", page.evaluate("document.readyState"))
+    print("BODY VIEW:", page.get_attribute("body", "data-view"))
+    print("APP TYPE:", page.evaluate("typeof App"))
+    print("VIEWS TYPE:", page.evaluate("typeof Views"))
     page.wait_for_timeout(2200)
     page.screenshot(path=str(OUT / "01-chat-first.png"), full_page=True)
 

@@ -50,6 +50,8 @@ jobs:
               assert page.locator("#wake-btn").count() == 1
               assert page.locator("#wake-btn").get_attribute("aria-pressed") == "false"
               assert page.evaluate("normalizedSpeech('BÁY-E')") == "bay-e"
+              assert page.evaluate("wakePattern().test('hola bay e')") is True
+              assert page.evaluate("wakePattern().test('hola baye')") is True
               page.screenshot(path=str(out/"baye-voice-ready.png"), full_page=True)
               page.click("#new-chat")
               page.wait_for_timeout(300)

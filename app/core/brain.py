@@ -28,6 +28,7 @@ from app.cognition.conversation import respond as conversation_respond
 from app.cognition.model_router import ModelReply
 from app.core.diagnostics import snapshot as diagnostics_snapshot
 from app.world.model import snapshot as world_snapshot
+from app.health.service import record as health_record, trend as health_trend
 from app.learning.routines import strongest as strongest_routine
 from app.adapters.robot import ROBOT
 from app.core.privacy import enforce_retention
@@ -714,6 +715,56 @@ class BayeBrain:
                     txt = "No tengo una cámara aportando observaciones confirmadas ahora mismo."
             return txt, "curious", ModelReply(txt, "skill", "vision.status",
                 ui_action={"type": "navigate", "view": "vision"})
+
+        if re.fullmatch(r"(ayuda|qué puedes hacer|que puedes hacer|comandos)[?.! ]*", t):
+            txt = (
+                "Puedes pedirme por chat que recuerde u olvide datos, liste o cree tareas, abra memoria/visión/ajustes, "
+                "te diga mi estado o emociones, registre mediciones descriptivas, active privacidad o autonomía, "
+                "y controle funciones del robot como detener, explorar, patrullar, seguir o volver a base. "
+                "Las acciones físicas siempre pasan por Safety Governor."
+            )
+            return txt, "curious", ModelReply(txt, "skill", "help")
+
+        health_names = {
+            "pulso": ("heart_rate", "bpm"), "frecuencia cardíaca": ("heart_rate", "bpm"),
+            "frecuencia cardiaca": ("heart_rate", "bpm"), "spo2": ("spo2", "%"),
+            "saturación": ("spo2", "%"), "saturacion": ("spo2", "%"),
+            "temperatura": ("temperature", "°C"), "respiración": ("respiratory_rate", "rpm"),
+            "respiracion": ("respiratory_rate", "rpm"), "peso": ("weight", "kg"),
+        }
+        m = re.fullmatch(
+            r"(?:registra|guarda|anota)\s+(?:mi\s+)?(pulso|frecuencia cardíaca|frecuencia cardiaca|spo2|saturación|saturacion|temperatura|respiración|respiracion|peso)"
+            r"(?:\s+(?:en|de|es))?\s+([0-9]+(?:[.,][0-9]+)?)\s*([a-zA-Z%°/]*)[!. ]*",
+            t,
+        )
+        if m:
+            label = m.group(1)
+            metric, default_unit = health_names[label]
+            value = float(m.group(2).replace(",", "."))
+            unit = m.group(3) or default_unit
+            item = health_record(metric, value, unit, source="user")
+            txt = f"Registrado: {label} {value:g} {unit}. Lo trataré como una medición descriptiva, no como un diagnóstico."
+            return txt, "attentive", ModelReply(txt, "skill", "health.record",
+                ui_action={"type": "navigate", "view": "health"})
+
+        m = re.fullmatch(
+            r"(?:tendencia|cómo va|como va|historial)\s+(?:de\s+)?(?:mi\s+)?(pulso|frecuencia cardíaca|frecuencia cardiaca|spo2|saturación|saturacion|temperatura|respiración|respiracion|peso)[?.! ]*",
+            t,
+        )
+        if m:
+            label = m.group(1)
+            metric, unit = health_names[label]
+            tr = health_trend(metric)
+            if not tr.get("count"):
+                txt = f"No tengo mediciones suficientes de {label}."
+            else:
+                txt = (
+                    f"Tengo {tr['count']} mediciones de {label}. Última: {tr['latest']:g} {unit}; "
+                    f"media: {tr['mean']:.1f} {unit}; cambio en el periodo: {tr['delta']:+.1f} {unit}. "
+                    "Es una tendencia descriptiva, no un diagnóstico."
+                )
+            return txt, "curious", ModelReply(txt, "skill", "health.trend",
+                ui_action={"type": "navigate", "view": "health"})
 
         if re.fullmatch(r"(detente|para|frena|stop|quieto)[!. ]*", t):
             self.command("move", {"dir": "stop"})

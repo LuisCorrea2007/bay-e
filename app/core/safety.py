@@ -24,6 +24,17 @@ class SafetyDecision:
 
 
 class SafetyGovernor:
+    def evaluate_manipulation(self, side: str, state: dict[str, Any]) -> SafetyDecision:
+        if side not in ("left", "right"):
+            return SafetyDecision(False, "Brazo no reconocido.", "invalid_arm", {"side": side})
+        if not state.get("hardware_connected", False):
+            return SafetyDecision(False, "Manipulación bloqueada: cuerpo físico sin heartbeat.", "hardware_heartbeat_missing", {"side": side})
+        if state.get("software_estop", False):
+            return SafetyDecision(False, "Manipulación bloqueada por parada de emergencia.", "emergency_stop", {"side": side})
+        if state.get("security", {}).get("status") not in ("ok", "clear"):
+            return SafetyDecision(False, "Manipulación bloqueada por seguridad.", "security_not_clear", {"side": side})
+        return SafetyDecision(True, "Manipulación autorizada por la capa determinista.", "allowed", {"side": side})
+
     def evaluate_motion(self, direction: str, state: dict[str, Any]) -> SafetyDecision:
         direction = (direction or "stop").lower().strip()
         if direction not in MOTION_COMMANDS:
@@ -32,6 +43,9 @@ class SafetyGovernor:
         # STOP is always admissible, even with no hardware.
         if direction == "stop":
             return SafetyDecision(True, "Parada segura.", "safe_stop", {"dir": "stop"})
+
+        if state.get("software_estop", False):
+            return SafetyDecision(False, "Movimiento bloqueado por parada de emergencia.", "emergency_stop", {"dir": "stop"})
 
         modules = {m.get("id"): m for m in state.get("modules", [])}
         motor = modules.get("motors", {})

@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feature/chat-mind-mobile
+      - feature/**
       - release/**
   workflow_dispatch:
 
@@ -67,6 +67,13 @@ jobs:
               page.wait_for_timeout(250)
               assert "desconectado" in page.locator("#control-hardware").inner_text().lower()
               page.screenshot(path=str(out/"baye-control.png"), full_page=True)
+              page.click("[data-panel=devices]")
+              page.wait_for_timeout(200)
+              page.click("#pair-mobile-btn")
+              page.wait_for_timeout(250)
+              code=page.locator("#pair-code-value").inner_text().strip()
+              assert len(code) == 6 and code.isdigit()
+              page.screenshot(path=str(out/"baye-mobile-pairing.png"), full_page=True)
               b.close()
           PY
           python /tmp/test_ui.py

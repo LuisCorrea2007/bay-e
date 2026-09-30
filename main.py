@@ -18,6 +18,9 @@ from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from app.api.routes import router as api_router
 from app.core import db

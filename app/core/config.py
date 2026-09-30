@@ -54,7 +54,10 @@ AVAILABLE_LANGUAGES = {"es": "Español", "en": "English", "ca": "Català", "fr":
 DEFAULT_SETTINGS = {
     "system": {"demo_mode": False, "allow_synthetic_events": False},
     "ai": {
-        "provider_order": "llama.cpp,ollama",
+        "provider_order": "openai,llama.cpp,ollama",
+        "openai_url": "https://api.openai.com/v1",
+        "openai_model": "gpt-6-luna",
+        "openai_store": False,
         "llama_url": "http://127.0.0.1:8080",
         "llama_model": "local",
         "ollama_url": "http://127.0.0.1:11434",

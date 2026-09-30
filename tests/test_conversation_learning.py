@@ -29,6 +29,12 @@ class ConversationLearningTests(unittest.TestCase):
         self.assertIsNone(propose("Mi contraseña es supersecreta123", "msg_sensitive"))
         self.assertIsNone(propose("Normalmente reviso mi cuenta bancaria a las 8", "msg_sensitive2"))
 
+    def test_short_sensitive_terms_do_not_block_unrelated_words(self):
+        marker = "pintura-" + uuid.uuid4().hex[:8]
+        candidate = propose("Me gusta la " + marker, "msg_false_positive")
+        self.assertIsNotNone(candidate)
+        db.resolve_learning_candidate(candidate["id"], "reject")
+
     def test_rejected_candidate_does_not_create_memory(self):
         marker = "verde-" + uuid.uuid4().hex[:8]
         candidate = propose("Prefiero " + marker, "msg_reject")

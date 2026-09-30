@@ -3,7 +3,7 @@ BAY-E · Núcleo del "ser": estado interno, motor emocional y expresión facial.
 
 Este módulo es el corazón vivo de la interfaz:
   * Mantiene el estado global (modo, actividad, batería, sensores…).
-  * Simula la vida interna cuando no hay hardware real (bucle heartbeat).
+  * Mantiene la dinámica interna incluso cuando el cuerpo físico está desconectado.
   * Deriva la EXPRESIÓN de la cara a partir de emociones + actividad.
   * Genera respuestas de personalidad (Baymax cálido + WALL-E curioso).
   * Publica snapshots por WebSocket mediante un callback `broadcast`.
@@ -79,7 +79,7 @@ def _clamp(v, lo=0.0, hi=1.0):
 
 
 class BayeBrain:
-    """Estado vivo de BAY-E + bucle de simulación + generador de expresiones."""
+    """Estado vivo de BAY-E + dinámica interna + generador de expresiones."""
 
     def __init__(self) -> None:
         db.init_db()  # garantiza esquema antes de leer persistencia (idempotente)
@@ -407,7 +407,7 @@ class BayeBrain:
 
     # ------------------------------------------------------------ percepción
     def perceive_vision(self, det: dict) -> None:
-        """Entrada del módulo de visión (real o simulada)."""
+        """Entrada normalizada del módulo de visión; sintética solo en demo explícito."""
         s = self.s
         label = det.get("label", "algo")
         conf = float(det.get("confidence", 0.5))
@@ -717,7 +717,7 @@ class BayeBrain:
         emit({"type": "model", "provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded})
 
         bmsg = db.add_message("baye", reply_text, emotion=emotion)
-        # tipado progresivo simulando voz
+        # tipado progresivo sincronizado con el estado de habla
         chunk = max(3, len(reply_text) // 22)
         partial = ""
         for i in range(0, len(reply_text), chunk):

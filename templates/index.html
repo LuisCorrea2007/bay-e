@@ -259,7 +259,7 @@
             <button class="btn btn-ghost sm" id="cam-toggle"><i data-icon="power"></i>sensor</button>
           </div>
           <div class="feed" id="feed">
-            <img id="feed-img" src="/static/camera_sim.svg" alt="vista simulada">
+            <img id="feed-img" src="/static/camera_sim.svg" alt="sin señal de cámara">
             <div class="feed-boxes" id="feed-boxes"></div>
             <div class="feed-scan"></div>
             <div class="feed-off" id="feed-off" hidden><i data-icon="eyeoff"></i>Cámara desactivada o modo privado activo</div>
@@ -377,7 +377,7 @@
         <div class="card ver-card">
           <div class="card-h"><i data-icon="box"></i><h3>Versión</h3></div>
           <div class="ver-big">BAY-E <b id="mod-version">v{{ version }}</b></div>
-          <p class="hint">Núcleo FastAPI + cerebro simulado. Los módulos reales sustituyen solo sus adaptadores.</p>
+          <p class="hint">Núcleo local BAY-E + adaptadores modulares. El estado indica qué capacidades reales están disponibles.</p>
           <button class="btn btn-primary w100" id="upd-check"><i data-icon="refresh"></i>Comprobar actualizaciones</button>
           <div class="upd-list" id="upd-list"></div>
           <div class="card-h sub"><i data-icon="voice"></i><h3>Voces y modelos</h3></div>

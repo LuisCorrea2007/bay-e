@@ -1,0 +1,111 @@
+name: Baymax Repo Visual Research
+
+on:
+  push:
+    branches:
+      - research/repo-visuals
+  workflow_dispatch:
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Clone public source projects
+        run: |
+          mkdir -p research_repos output
+          git clone --depth 1 https://github.com/The-Semicolons/Baymax.git research_repos/semicolons
+          git clone --depth 1 https://github.com/neild0/BayMax.git research_repos/neild0
+          git clone --depth 1 https://github.com/titungpemba/Baymax-AI.git research_repos/titungpemba
+          git clone --depth 1 https://github.com/amanunreal/baymax.git research_repos/amanunreal
+          git clone --depth 1 https://github.com/laofahai/baymax.git research_repos/laofahai
+          git clone --depth 1 https://github.com/joehsmash/baymax.git research_repos/joehsmash
+          git clone --depth 1 https://github.com/FelixSeptem/baymax.git research_repos/felix
+          git clone --depth 1 https://github.com/ParsifalC/NetEaseBaymaxDemo.git research_repos/netease
+
+      - name: Copy original visual assets
+        run: |
+          cp research_repos/semicolons/Assets/Images/splashScreen.jpg output/01-semicolons-splash.jpg
+          cp research_repos/semicolons/Documents/Use\ Case.png output/02-semicolons-use-case.png
+          cp research_repos/semicolons/Documents/Flowchart.jpg output/03-semicolons-flowchart.jpg
+          cp research_repos/amanunreal/src/assets/images/baymax.png output/04-amanunreal-background.png
+          cp research_repos/amanunreal/src/assets/images/app_icon.png output/05-amanunreal-app-icon.png
+          cp research_repos/joehsmash/docs/images/baymax_blink_sequence.gif output/06-joehsmash-blink.gif
+          cp research_repos/joehsmash/docs/images/baymax_full.png output/07-joehsmash-full.png
+          cp research_repos/joehsmash/docs/images/baymax_eyes.gif output/08-joehsmash-eyes.gif
+
+      - name: Install browser
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Serve joehsmash web app
+        run: |
+          nohup python -m http.server 9010 --directory research_repos/joehsmash/docs >/tmp/joe.log 2>&1 &
+          sleep 2
+
+      - name: Capture actual joehsmash interface
+        run: |
+          cat >/tmp/cap.py <<'PY'
+          from playwright.sync_api import sync_playwright
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True)
+              page=b.new_page(viewport={"width":1440,"height":950})
+              page.goto("http://127.0.0.1:9010", wait_until="domcontentloaded")
+              page.wait_for_timeout(3500)
+              page.screenshot(path="output/09-joehsmash-live.png", full_page=True)
+              b.close()
+          PY
+          python /tmp/cap.py
+
+      - name: Render neild0 notebook as HTML
+        run: |
+          pip install nbconvert jupyter
+          jupyter nbconvert --to html --output /tmp/skin.html research_repos/neild0/Image2Disease/ConvSkinDisease.ipynb || true
+          mkdir -p /tmp/notebook
+          cp /tmp/skin.html /tmp/notebook/index.html || true
+          nohup python -m http.server 9011 --directory /tmp/notebook >/tmp/nb.log 2>&1 &
+          sleep 2
+          cat >/tmp/cap_nb.py <<'PY'
+          from playwright.sync_api import sync_playwright
+          from pathlib import Path
+          if Path("/tmp/notebook/index.html").exists():
+              with sync_playwright() as p:
+                  b=p.chromium.launch(headless=True)
+                  page=b.new_page(viewport={"width":1440,"height":950})
+                  page.goto("http://127.0.0.1:9011", wait_until="domcontentloaded")
+                  page.wait_for_timeout(2000)
+                  page.screenshot(path="output/10-neild0-notebook.png", full_page=False)
+                  b.close()
+          PY
+          python /tmp/cap_nb.py
+
+      - name: Produce terminal-flow evidence for Baymax-AI
+        run: |
+          python - <<'PY' > output/11-titungpemba-terminal.txt
+          import ast, pathlib
+          p=pathlib.Path("research_repos/titungpemba/BAYMAX.py")
+          src=p.read_text(errors="ignore")
+          print("Baymax-AI is terminal/voice based; no GUI is defined.")
+          print()
+          print("Actual console strings found in source:")
+          tree=ast.parse(src)
+          for n in ast.walk(tree):
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id=="print" and n.args:
+                  try:
+                      v=ast.literal_eval(n.args[0])
+                      if isinstance(v,str): print(v)
+                  except Exception: pass
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: baymax-repo-visuals
+          path: output/
+          if-no-files-found: error

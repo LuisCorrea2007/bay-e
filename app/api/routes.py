@@ -73,7 +73,12 @@ async def chat_send(payload: dict = Body(...)):
     bmsg = db.add_message("baye", reply, emotion=emotion)
     BAYE.set_activity("speaking", max(2.0, len(reply) / 12))
     broadcast_state()
-    return {"user": msg, "baye": bmsg, "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded}}
+    return {
+        "user": msg,
+        "baye": bmsg,
+        "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded},
+        "ui_action": model_reply.ui_action,
+    }
 
 
 @router.post("/chat/flag")

@@ -71,12 +71,7 @@ jobs:
             sleep 8
             adb logcat -d > mobile/runtime/logcat.txt || true
             adb exec-out screencap -p > mobile/runtime/baye-mobile.png || true
-            PID="$(adb shell pidof com.luiscorrea.baye | tr -d '\r')"
-            if [ -z "$PID" ]; then
-              echo "BAY-E Mobile process exited after launch"
-              grep -E "AndroidRuntime|FATAL EXCEPTION|Process: com\.luiscorrea\.baye|Capacitor|chromium" mobile/runtime/logcat.txt | tail -n 220 || true
-              exit 1
-            fi
+            adb shell pidof com.luiscorrea.baye | grep -Eq '[0-9]+' || (echo "BAY-E Mobile process exited after launch"; grep -E "AndroidRuntime|FATAL EXCEPTION|Process: com\.luiscorrea\.baye|Capacitor|chromium" mobile/runtime/logcat.txt | tail -n 220; exit 1)
             adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity|com\.luiscorrea\.baye" | head -n 40 || true
             test -s mobile/runtime/baye-mobile.png
 

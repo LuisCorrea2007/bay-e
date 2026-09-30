@@ -8,6 +8,7 @@ from typing import Any
 from app.core.events import BUS
 from app.core.guardian import GUARDIAN
 from .object_detector import OBJECTS
+from .face_identity import FACE_IDENTITY
 
 
 class VisionAdapter:
@@ -43,18 +44,24 @@ class VisionAdapter:
         brightness = float(gray.mean() / 255.0)
 
         detections: list[dict[str, Any]] = []
-        faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(45, 45))
-        for x, y, fw, fh in faces[:5]:
-            det = {
-                "id": f"face_{int(time.time()*1000)}_{x}",
-                "label": "persona",
-                "kind": "person",
-                "confidence": 0.72,
-                "ts": time.time(),
-                "box": {"x": x/w, "y": y/h, "w": fw/w, "h": fh/h},
-                "source": "opencv_haar",
-            }
-            detections.append(det)
+        identified = FACE_IDENTITY.identify_frame(frame)
+        if identified:
+            for face in identified:
+                face.update({"id": f"face_{int(time.time()*1000)}_{len(detections)}", "ts": time.time()})
+                detections.append(face)
+        else:
+            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(45, 45))
+            for x, y, fw, fh in faces[:5]:
+                det = {
+                    "id": f"face_{int(time.time()*1000)}_{x}",
+                    "label": "persona",
+                    "kind": "person",
+                    "confidence": 0.72,
+                    "ts": time.time(),
+                    "box": {"x": x/w, "y": y/h, "w": fw/w, "h": fh/h},
+                    "source": "opencv_haar",
+                }
+                detections.append(det)
 
         motion = 0.0
         with self._lock:

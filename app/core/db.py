@@ -179,6 +179,20 @@ CREATE TABLE IF NOT EXISTS mobile_nodes (
     paired_at REAL NOT NULL DEFAULT 0,
     revoked INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS learning_candidates (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source_message_id TEXT NOT NULL DEFAULT '',
+    confidence REAL NOT NULL DEFAULT 0.6,
+    reason TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    memory_id TEXT NOT NULL DEFAULT '',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learning_status_created ON learning_candidates(status, created_at DESC);
 """
 
 
@@ -655,6 +669,108 @@ def delete_mind_rule(rule_id: str) -> bool:
         conn.commit()
         conn.close()
     return n > 0
+
+
+# ----------------------------------------------------------------- aprendizaje propuesto
+def _row_to_learning_candidate(r: sqlite3.Row) -> dict:
+    return dict(r)
+
+
+def add_learning_candidate(*, kind: str, content: str, source_message_id: str = "",
+                           confidence: float = 0.6, reason: str = "") -> Optional[dict]:
+    content = " ".join((content or "").split()).strip()
+    if not content:
+        return None
+    with _LOCK:
+        conn = _conn()
+        duplicate = conn.execute(
+            "SELECT * FROM learning_candidates WHERE lower(content)=lower(?) "
+            "AND status IN ('pending','approved') ORDER BY created_at DESC LIMIT 1",
+            (content,),
+        ).fetchone()
+        if duplicate:
+            conn.close()
+            return _row_to_learning_candidate(duplicate)
+        existing_memory = conn.execute(
+            "SELECT id FROM memories WHERE archived=0 AND lower(content)=lower(?) LIMIT 1",
+            (content,),
+        ).fetchone()
+        if existing_memory:
+            conn.close()
+            return None
+        now = time.time()
+        cid = "learn_" + uuid.uuid4().hex[:10]
+        conn.execute(
+            "INSERT INTO learning_candidates "
+            "(id,kind,content,source_message_id,confidence,reason,status,memory_id,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,'pending','',?,?)",
+            (cid, kind, content, source_message_id, max(0.0, min(1.0, confidence)), reason, now, now),
+        )
+        conn.commit()
+        row = conn.execute("SELECT * FROM learning_candidates WHERE id=?", (cid,)).fetchone()
+        conn.close()
+    return _row_to_learning_candidate(row)
+
+
+def list_learning_candidates(status: str = "pending", limit: int = 100) -> list[dict]:
+    sql = "SELECT * FROM learning_candidates"
+    args: list[Any] = []
+    if status:
+        sql += " WHERE status=?"
+        args.append(status)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    args.append(max(1, min(500, int(limit))))
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    return [_row_to_learning_candidate(r) for r in rows]
+
+
+def get_learning_candidate(candidate_id: str) -> Optional[dict]:
+    with _LOCK:
+        conn = _conn()
+        row = conn.execute("SELECT * FROM learning_candidates WHERE id=?", (candidate_id,)).fetchone()
+        conn.close()
+    return _row_to_learning_candidate(row) if row else None
+
+
+def resolve_learning_candidate(candidate_id: str, action: str) -> Optional[dict]:
+    action = (action or "").strip().lower()
+    if action not in {"approve", "reject"}:
+        raise ValueError("acción de aprendizaje inválida")
+    with _LOCK:
+        conn = _conn()
+        row = conn.execute("SELECT * FROM learning_candidates WHERE id=?", (candidate_id,)).fetchone()
+        if not row:
+            conn.close()
+            return None
+        item = _row_to_learning_candidate(row)
+        if item["status"] != "pending":
+            conn.close()
+            return item
+        now = time.time()
+        memory_id = ""
+        status = "rejected"
+        if action == "approve":
+            mid = "m_" + uuid.uuid4().hex[:10]
+            conn.execute(
+                "INSERT INTO memories (id,type,content,detail,created_at,updated_at,source,confidence,"
+                "tags,relations,last_used,use_count,pinned,archived,merged_into) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0,'')",
+                (mid, item["kind"], item["content"], item["reason"], now, now, "learning-review",
+                 float(item["confidence"]), json.dumps(["learned","user-approved"]), "[]", now),
+            )
+            memory_id = mid
+            status = "approved"
+        conn.execute(
+            "UPDATE learning_candidates SET status=?,memory_id=?,updated_at=? WHERE id=?",
+            (status, memory_id, now, candidate_id),
+        )
+        conn.commit()
+        out = conn.execute("SELECT * FROM learning_candidates WHERE id=?", (candidate_id,)).fetchone()
+        conn.close()
+    return _row_to_learning_candidate(out)
 
 
 # ----------------------------------------------------------------- nodos móviles

@@ -181,7 +181,8 @@ function handleWakeTranscript(transcript){
   const match=norm.match(/\b(?:bay[\s-]?e|baye|bai[\s-]?e)\b/);
   if(match){
     App.voice.armedUntil=Date.now()+8000;
-    const command=norm.slice((match.index||0)+match[0].length).trim();
+    const rawMatch=raw.match(/\b(?:bay[\s-]?e|baye|bai[\s-]?e)\b/i);
+    const command=(rawMatch?raw.slice((rawMatch.index||0)+rawMatch[0].length):norm.slice((match.index||0)+match[0].length)).trim();
     if(command){send(command);App.voice.armedUntil=0}else{toast("Te escucho · dime qué necesitas");$("#activity").textContent="BAY-E está atento…"}
     return;
   }

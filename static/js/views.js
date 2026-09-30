@@ -748,6 +748,23 @@ const Views = (() => {
         $("#pitch").value = ((e.clientY - r.top) / r.height * 2 - 1) * 100;
         sendLook();
       });
+      const sendArm = (side) => Net.command("arm", {
+        side,
+        shoulder: +$("#arm-" + (side === "left" ? "l" : "r") + "-shoulder").value / 100,
+        elbow: +$("#arm-" + (side === "left" ? "l" : "r") + "-elbow").value / 100,
+        gripper: +$("#arm-" + (side === "left" ? "l" : "r") + "-gripper").value / 100,
+      });
+      ["l", "r"].forEach((short) => {
+        const side = short === "l" ? "left" : "right";
+        ["shoulder", "elbow", "gripper"].forEach((joint) => {
+          $("#arm-" + short + "-" + joint).addEventListener("change", () => sendArm(side));
+        });
+      });
+      $("#robot-estop").addEventListener("click", () => Net.command("emergency_stop", {}));
+      $("#robot-estop-clear").addEventListener("click", () => Net.command("clear_estop", {}));
+      Net.on("command_ack", (ack) => {
+        if (ack.blocked) toast("Orden bloqueada por seguridad: " + (ack.reason || "sin detalle"), true);
+      });
       $("#sw-autonomy").addEventListener("change", (e) => Net.command("toggle_autonomy", { on: e.target.checked }));
       $("#btn-base").addEventListener("click", () => Net.command("return_base"));
       $("#goal-add").addEventListener("click", () => this.addGoal());
@@ -761,6 +778,16 @@ const Views = (() => {
     refresh(s) {
       $$(".mode-btn").forEach((b) => b.classList.toggle("on", b.dataset.m === s.mode));
       $("#sw-autonomy").checked = s.autonomy;
+      const arms = s.arms || {};
+      for (const [side, short] of [["left","l"],["right","r"]]) {
+        const a = arms[side] || {};
+        const ids = [["shoulder",-1,1],["elbow",-1,1],["gripper",0,1]];
+        ids.forEach(([joint]) => {
+          const el = $("#arm-" + short + "-" + joint);
+          if (el && document.activeElement !== el) el.value = Math.round((a[joint] || 0) * 100);
+        });
+      }
+      $("#robot-estop").classList.toggle("on", !!s.software_estop);
       $("#c-task").textContent = s.current_task || "ninguna";
       $("#c-next").textContent = s.next_decision;
       $("#c-reason").textContent = s.reason;

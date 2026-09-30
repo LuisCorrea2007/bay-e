@@ -193,6 +193,20 @@ CREATE TABLE IF NOT EXISTS learning_candidates (
     updated_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_learning_status_created ON learning_candidates(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS relationship_events (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'chat',
+    source_id TEXT NOT NULL DEFAULT '',
+    salience REAL NOT NULL DEFAULT 0.5,
+    valence REAL NOT NULL DEFAULT 0.0,
+    tags TEXT NOT NULL DEFAULT '[]',
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relationship_event_created ON relationship_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_relationship_event_kind ON relationship_events(kind, created_at DESC);
 """
 
 
@@ -412,6 +426,59 @@ def import_memories(items: list[dict]) -> int:
         except Exception:
             continue
     return n
+
+
+# ----------------------------------------------------------------- continuidad relacional
+def _row_to_relationship_event(r: sqlite3.Row) -> dict:
+    d = dict(r)
+    d["tags"] = json.loads(d.get("tags") or "[]")
+    return d
+
+
+def add_relationship_event(*, kind: str, summary: str, source: str = "chat",
+                           source_id: str = "", salience: float = 0.5,
+                           valence: float = 0.0, tags: Optional[list] = None) -> dict:
+    now = time.time()
+    eid = "rel_" + uuid.uuid4().hex[:10]
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO relationship_events (id,kind,summary,source,source_id,salience,valence,tags,created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (eid, str(kind)[:40], str(summary)[:500], str(source)[:40], str(source_id)[:120],
+             max(0.0, min(1.0, float(salience))), max(-1.0, min(1.0, float(valence))),
+             json.dumps(tags or []), now),
+        )
+        conn.commit()
+        r = conn.execute("SELECT * FROM relationship_events WHERE id=?", (eid,)).fetchone()
+        conn.close()
+    return _row_to_relationship_event(r)
+
+
+def list_relationship_events(*, kind: str = "", limit: int = 40) -> list[dict]:
+    sql = "SELECT * FROM relationship_events"
+    args: list[Any] = []
+    if kind:
+        sql += " WHERE kind=?"
+        args.append(kind)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    args.append(max(1, min(500, int(limit))))
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    return [_row_to_relationship_event(r) for r in rows]
+
+
+def relationship_summary(limit: int = 12) -> dict:
+    events = list_relationship_events(limit=limit)
+    approved = [m for m in list_memories(include_archived=False) if "user-approved" in m.get("tags", [])]
+    return {
+        "recent_events": events,
+        "approved_memory_count": len(approved),
+        "pinned_memory_count": sum(1 for m in approved if m.get("pinned")),
+        "last_event_at": events[0]["created_at"] if events else 0,
+    }
 
 
 # ----------------------------------------------------------------- conversaciones / mensajes

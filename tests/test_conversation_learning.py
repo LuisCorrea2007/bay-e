@@ -20,6 +20,8 @@ class ConversationLearningTests(unittest.TestCase):
 
         approved = db.resolve_learning_candidate(candidate["id"], "approve")
         self.assertEqual(approved["status"], "approved")
+        self.assertEqual(approved["content"], "")
+        self.assertEqual(approved["source_message_id"], "")
         memory = db.get_memory(approved["memory_id"])
         self.assertIsNotNone(memory)
         self.assertEqual(memory["source"], "learning-review")

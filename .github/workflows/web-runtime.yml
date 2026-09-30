@@ -38,7 +38,7 @@ jobs:
           from playwright.sync_api import sync_playwright
           out=Path("runtime"); out.mkdir(exist_ok=True)
           with sync_playwright() as p:
-              b=p.chromium.launch(headless=True)
+              b=p.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
               page=b.new_page(viewport={"width":1440,"height":950})
               page.on("console", lambda msg: print("BROWSER", msg.type, msg.text))
               page.on("pageerror", lambda exc: print("PAGEERROR", exc))

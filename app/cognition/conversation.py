@@ -49,7 +49,8 @@ async def respond(user_text: str, *, state: dict[str, Any], history: list[dict[s
     memories = context_block(user_text, limit=6)
     world = world_snapshot()
     world_summary = "\n".join(
-        f"- {e['kind']}: {e['label']} (confianza {int(float(e['confidence'])*100)}%)"
+        f"- {e['kind']}: {e['label']} · lugar={e.get('attrs', {}).get('last_room') or 'desconocido'} "
+        f"(confianza {int(float(e['confidence'])*100)}%)"
         for e in world["entities"][:12]
     ) or "(sin entidades confirmadas)"
 

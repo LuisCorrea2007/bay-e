@@ -11,9 +11,9 @@
 
 const Face = (() => {
   const EMO_COLORS = {
-    happy: "#5eeaff", excited: "#7df0ff", curious: "#9b7bff", thinking: "#4d8dff",
-    attentive: "#5eeaff", worried: "#ff9d6b", bored: "#61779a", sleepy: "#3f5f8f",
-    neutral_face: "#5eeaff",
+    happy: "#f2f2f2", excited: "#ffffff", curious: "#d9d9d9", thinking: "#b8bfd0",
+    attentive: "#f5f5f5", worried: "#e4b85d", bored: "#777777", sleepy: "#666a73",
+    neutral_face: "#e8e8e8",
   };
 
   // ---------- plantilla SVG ----------
@@ -22,13 +22,13 @@ const Face = (() => {
     <svg viewBox="0 0 240 240" width="100%" height="100%" role="img" aria-label="Cara viva de BAY-E">
       <defs>
         <radialGradient id="halo-${id}" cx="50%" cy="46%" r="55%">
-          <stop offset="0%" stop-color="#1a3550"/>
-          <stop offset="55%" stop-color="#0c1c30"/>
-          <stop offset="100%" stop-color="#071120"/>
+          <stop offset="0%" stop-color="#1a1a1a"/>
+          <stop offset="55%" stop-color="#101010"/>
+          <stop offset="100%" stop-color="#070707"/>
         </radialGradient>
         <linearGradient id="eyeGrad-${id}" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#9ff6ff"/>
-          <stop offset="100%" stop-color="#3ec8f0"/>
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="100%" stop-color="#c8c8c8"/>
         </linearGradient>
         <filter id="softGlow-${id}" x="-60%" y="-60%" width="220%" height="220%">
           <feGaussianBlur stdDeviation="4" result="b"/>
@@ -37,27 +37,27 @@ const Face = (() => {
       </defs>
 
       <!-- halo exterior vivo -->
-      <circle class="face-glow" cx="120" cy="120" r="112" fill="none" stroke="rgba(94,234,255,.16)" stroke-width="1.5"/>
-      <circle cx="120" cy="120" r="104" fill="url(#halo-${id})" stroke="rgba(120,200,255,.28)" stroke-width="1.4"/>
+      <circle class="face-glow" cx="120" cy="120" r="112" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="1.5"/>
+      <circle cx="120" cy="120" r="104" fill="url(#halo-${id})" stroke="rgba(255,255,255,.16)" stroke-width="1.4"/>
 
       <!-- ondas de escucha -->
       <g class="waves" filter="url(#softGlow-${id})">
-        <circle class="wave-ring" cx="120" cy="120" r="88" fill="none" stroke="#5eeaff" stroke-width="1.6"/>
-        <circle class="wave-ring" cx="120" cy="120" r="88" fill="none" stroke="#5eeaff" stroke-width="1.2" style="animation-delay:.55s"/>
-        <circle class="wave-ring" cx="120" cy="120" r="88" fill="none" stroke="#5eeaff" stroke-width=".9" style="animation-delay:1.1s"/>
+        <circle class="wave-ring" cx="120" cy="120" r="88" fill="none" stroke="#e9e9e9" stroke-width="1.6"/>
+        <circle class="wave-ring" cx="120" cy="120" r="88" fill="none" stroke="#e9e9e9" stroke-width="1.2" style="animation-delay:.55s"/>
+        <circle class="wave-ring" cx="120" cy="120" r="88" fill="none" stroke="#e9e9e9" stroke-width=".9" style="animation-delay:1.1s"/>
       </g>
 
       <!-- cuerpo facial (respira) -->
       <g class="face-body">
         <!-- antena de estado -->
-        <line class="ant-stalk" x1="120" y1="16" x2="120" y2="30" stroke="#5eeaff" stroke-width="2" opacity=".7"/>
-        <circle class="ant-tip" cx="120" cy="14" r="4.5" fill="#5eeaff" filter="url(#softGlow-${id})"/>
+        <line class="ant-stalk" x1="120" y1="16" x2="120" y2="30" stroke="#e9e9e9" stroke-width="2" opacity=".7"/>
+        <circle class="ant-tip" cx="120" cy="14" r="4.5" fill="#e9e9e9" filter="url(#softGlow-${id})"/>
 
         <!-- partículas de pensamiento -->
         <g class="think">
-          <circle class="think-particle" cx="168" cy="64" r="3" fill="#9b7bff"/>
-          <circle class="think-particle" cx="180" cy="52" r="2.2" fill="#5eeaff" style="animation-delay:.7s"/>
-          <circle class="think-particle" cx="172" cy="42" r="1.6" fill="#4d8dff" style="animation-delay:1.4s"/>
+          <circle class="think-particle" cx="168" cy="64" r="3" fill="#b9b9b9"/>
+          <circle class="think-particle" cx="180" cy="52" r="2.2" fill="#e9e9e9" style="animation-delay:.7s"/>
+          <circle class="think-particle" cx="172" cy="42" r="1.6" fill="#8f95a1" style="animation-delay:1.4s"/>
         </g>
 
         <!-- Zzz dormir -->
@@ -80,10 +80,10 @@ const Face = (() => {
           <g clip-path="url(#lids-${id})">
             <circle class="eye eye-l" cx="75" cy="118" r="24" fill="url(#eyeGrad-${id})" filter="url(#softGlow-${id})"/>
             <circle class="eye eye-r" cx="165" cy="118" r="24" fill="url(#eyeGrad-${id})" filter="url(#softGlow-${id})"/>
-            <circle class="pupil pup-l" cx="75" cy="118" r="9" fill="#04101f"/>
-            <circle class="pupil pup-r" cx="165" cy="118" r="9" fill="#04101f"/>
-            <circle class="glint gl-l" cx="81" cy="111" r="3.4" fill="#eafcff" opacity=".95"/>
-            <circle class="glint gl-r" cx="171" cy="111" r="3.4" fill="#eafcff" opacity=".95"/>
+            <circle class="pupil pup-l" cx="75" cy="118" r="9" fill="#060606"/>
+            <circle class="pupil pup-r" cx="165" cy="118" r="9" fill="#060606"/>
+            <circle class="glint gl-l" cx="81" cy="111" r="3.4" fill="#ffffff" opacity=".95"/>
+            <circle class="glint gl-r" cx="171" cy="111" r="3.4" fill="#ffffff" opacity=".95"/>
           </g>
         </g>
 
@@ -165,7 +165,7 @@ const Face = (() => {
     c.toggle("listening", inst.listening);
     c.toggle("thinking", inst.thinking);
     inst.els.zzz.setAttribute("opacity", inst.sleeping ? "1" : "0");
-    const col = EMO_COLORS[inst.emotion] || "#5eeaff";
+    const col = EMO_COLORS[inst.emotion] || "#e8e8e8";
     inst.els.antTip.setAttribute("fill", col);
     inst.els.mouth.setAttribute("stroke", col);
     inst.els.lidL.setAttribute("stroke", col);

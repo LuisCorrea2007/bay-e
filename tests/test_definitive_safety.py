@@ -50,6 +50,14 @@ class DefinitiveSafetyInvariantTests(unittest.TestCase):
         self.assertTrue(d.allowed)
         self.assertLessEqual(d.normalized["speed"], 0.18)
 
+    def test_malformed_telemetry_does_not_crash_governor(self):
+        d = SAFETY.evaluate_motion(
+            "forward", self.live_state(),
+            {"speed": "not-a-number", "pet_distance_m": "unknown"},
+        )
+        self.assertTrue(d.allowed)
+        self.assertGreater(d.normalized["speed"], 0)
+
     def test_safe_known_object_can_be_manipulated(self):
         d = SAFETY.evaluate_manipulation(
             "right", self.live_state(),

@@ -30,6 +30,7 @@ from ..cognition.agents import manifest as agent_manifest
 from ..cognition.model_router import MODELS
 from ..core.workflows import WORKFLOWS
 from ..health.service import record as health_record, trend as health_trend
+from ..learning.routines import discover as discover_routines
 from ..world.model import snapshot as world_snapshot
 
 router = APIRouter(prefix="/api")
@@ -508,3 +509,7 @@ async def audio_transcribe(audio: UploadFile = File(...)):
         Path(path).unlink(missing_ok=True)
     BAYE.hear(text)
     return {"text": text}
+
+@router.get("/learning/patterns")
+def learning_patterns(days: int = Query(30, ge=1, le=365), min_count: int = Query(3, ge=2, le=100)):
+    return {"patterns": discover_routines(days=days, min_count=min_count)}

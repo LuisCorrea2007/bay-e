@@ -14,7 +14,7 @@ BACKUP_DIR = DATA_DIR / "backups"                       # backups exportados
 for _d in (DATA_DIR, CAM_DIR, BACKUP_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 APP_NAME = "BAY-E"
 
 # Frecuencia del heartbeat del estado interno (segundos).
@@ -44,7 +44,7 @@ DEFAULT_MODULES = [
     {"id": "navigation",    "name": "Navegación",        "icon": "compass", "enabled": False, "version": "0.7.3", "desc": "Contrato preparado para ROS 2/Nav2. Desactivado hasta conectar hardware real."},
     {"id": "motors",        "name": "Chasis / Motores",  "icon": "cpu",     "enabled": False, "version": "—",     "desc": "Puente hardware real (ROS 2 / microcontrolador). No se simula movimiento por defecto."},
     {"id": "security",      "name": "Seguridad física",  "icon": "shield",  "enabled": True,  "version": "1.0.1", "desc": "Anti-colisión, pendientes, escaleras y zonas restringidas."},
-    {"id": "learning",      "name": "Aprendizaje",       "icon": "sparkle", "enabled": True,  "version": "0.5.0", "desc": "Adaptación de personalidad y preferencias del usuario."},
+    {"id": "learning",      "name": "Aprendizaje",       "icon": "sparkle", "enabled": True,  "version": "0.6.0", "desc": "Detecta preferencias y rutinas no sensibles; requiere aprobación humana antes de convertirlas en memoria."},
 ]
 
 AVAILABLE_VOICES = ["cálida · suave", "juguetona", "serena", "guardián", "piloto"]

@@ -25,6 +25,19 @@ class CoreServicesTests(unittest.TestCase):
         self.assertGreaterEqual(float(b["confidence"]), .8)
         self.assertTrue(any(e["id"] == a["id"] for e in snapshot()["entities"]))
 
+    def test_face_profile_can_be_deleted(self):
+        p = db.face_upsert_profile(name="CI Test Person", embedding=[0.1, 0.2, 0.3], consent_ts=123.0)
+        public_id = p["id"]
+        self.assertTrue(any(x["id"] == public_id for x in db.face_list_profiles()))
+        self.assertTrue(db.face_delete_profile(public_id))
+        self.assertFalse(any(x["id"] == public_id for x in db.face_list_profiles()))
+
+    def test_observations_support_learning(self):
+        for _ in range(3):
+            db.add_observation(kind="object", label="CI mug", room="kitchen", source="test", confidence=.9)
+        rows = db.list_observations(kind="object", label="CI mug", room="kitchen")
+        self.assertGreaterEqual(len(rows), 3)
+
     def test_health_trend_is_descriptive(self):
         record("test_metric", 10, "u", source="test")
         record("test_metric", 12, "u", source="test")

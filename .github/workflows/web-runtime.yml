@@ -76,6 +76,13 @@ jobs:
               page.wait_for_timeout(350)
               assert page.locator(".learning-card").count() == 0
               page.screenshot(path=str(out/"baye-learning.png"), full_page=True)
+              page.click("#drawer-close")
+              page.fill("#chat-search","turquesa")
+              page.wait_for_timeout(500)
+              assert page.locator(".search-hit").count() >= 1
+              page.screenshot(path=str(out/"baye-chat-search.png"), full_page=True)
+              page.fill("#chat-search","")
+              page.wait_for_timeout(250)
               page.click("[data-panel=control]")
               page.wait_for_timeout(200)
               page.click("[data-move=forward]")

@@ -773,22 +773,23 @@ def resolve_learning_candidate(candidate_id: str, action: str) -> Optional[dict]
             conn.close()
             return item
         now = time.time()
-        memory_id = ""
-        status = "rejected"
-        if action == "approve":
-            mid = "m_" + uuid.uuid4().hex[:10]
-            conn.execute(
-                "INSERT INTO memories (id,type,content,detail,created_at,updated_at,source,confidence,"
-                "tags,relations,last_used,use_count,pinned,archived,merged_into) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0,'')",
-                (mid, item["kind"], item["content"], item["reason"], now, now, "learning-review",
-                 float(item["confidence"]), json.dumps(["learned","user-approved"]), "[]", now),
-            )
-            memory_id = mid
-            status = "approved"
+        if action == "reject":
+            conn.execute("DELETE FROM learning_candidates WHERE id=?", (candidate_id,))
+            conn.commit()
+            conn.close()
+            return {**item, "status": "rejected", "memory_id": "", "updated_at": now}
+
+        mid = "m_" + uuid.uuid4().hex[:10]
         conn.execute(
-            "UPDATE learning_candidates SET status=?,memory_id=?,updated_at=? WHERE id=?",
-            (status, memory_id, now, candidate_id),
+            "INSERT INTO memories (id,type,content,detail,created_at,updated_at,source,confidence,"
+            "tags,relations,last_used,use_count,pinned,archived,merged_into) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0,0,'')",
+            (mid, item["kind"], item["content"], item["reason"], now, now, "learning-review",
+             float(item["confidence"]), json.dumps(["learned","user-approved"]), "[]", now),
+        )
+        conn.execute(
+            "UPDATE learning_candidates SET status='approved',memory_id=?,updated_at=? WHERE id=?",
+            (mid, now, candidate_id),
         )
         conn.commit()
         out = conn.execute("SELECT * FROM learning_candidates WHERE id=?", (candidate_id,)).fetchone()

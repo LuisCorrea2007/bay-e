@@ -1,0 +1,435 @@
+<!doctype html>
+<!--
+  BAY-E · Interfaz viva del compañero robótico.
+  SPA sin frameworks: HTML + CSS + JS puro sobre FastAPI/WebSocket.
+  Estructura: rail de navegación → vistas conmutables. La CARA vive en el header
+  para acompañar siempre al usuario, pase por donde pase.
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BAY-E · Compañero Robótico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/baye.css">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%230b1524"/><circle cx="34" cy="46" r="9" fill="%235eeaff"/><rect x="27" y="46" width="14" height="14" fill="%230b1524"/><circle cx="66" cy="46" r="9" fill="%235eeaff"/><rect x="59" y="46" width="14" height="14" fill="%230b1524"/></svg>'>
+</head>
+<body data-view="dashboard">
+
+<div class="orb orb-a"></div><div class="orb orb-b"></div><div class="grid-overlay"></div>
+
+<!-- ═════════════ RAIL DE NAVEGACIÓN ═════════════ -->
+<nav class="rail" id="rail" aria-label="Navegación principal">
+  <div class="rail-brand">
+    <svg viewBox="0 0 44 44" class="brand-mark" aria-hidden="true">
+      <circle cx="22" cy="22" r="20" class="bm-ring"/>
+      <circle cx="15" cy="20" r="4.6" class="bm-eye"/><rect x="12" y="20" width="6" height="6" class="bm-cut"/>
+      <circle cx="29" cy="20" r="4.6" class="bm-eye"/><rect x="26" y="20" width="6" height="6" class="bm-cut"/>
+      <path d="M14 30 Q22 36 30 30" class="bm-mouth"/>
+    </svg>
+    <div class="brand-txt"><b>{{ name }}</b><span>v{{ version }}</span></div>
+  </div>
+
+  <button class="rail-btn is-active" data-nav="dashboard" title="Dashboard"><i data-icon="home"></i><span>Dashboard</span></button>
+  <button class="rail-btn" data-nav="chat" title="Chat"><i data-icon="chat"></i><span>Chat</span></button>
+  <button class="rail-btn" data-nav="memory" title="Memoria"><i data-icon="brain"></i><span>Memoria</span></button>
+  <button class="rail-btn" data-nav="heart" title="Corazón emocional"><i data-icon="heart"></i><span>Corazón</span></button>
+  <button class="rail-btn" data-nav="vision" title="Visión"><i data-icon="eye"></i><span>Visión</span></button>
+  <button class="rail-btn" data-nav="control" title="Control"><i data-icon="gamepad"></i><span>Control</span></button>
+  <button class="rail-btn" data-nav="mind" title="Qué está pensando"><i data-icon="bulb"></i><span>Mente</span></button>
+  <button class="rail-btn" data-nav="tasks" title="Tareas y rutinas"><i data-icon="list"></i><span>Tareas</span></button>
+  <button class="rail-btn" data-nav="map" title="Mapa del hogar"><i data-icon="map"></i><span>Mapa</span></button>
+  <button class="rail-btn" data-nav="modules" title="Módulos y actualizaciones"><i data-icon="box"></i><span>Módulos</span></button>
+  <button class="rail-btn" data-nav="settings" title="Configuración"><i data-icon="gear"></i><span>Ajustes</span></button>
+  <button class="rail-btn" data-nav="privacy" title="Privacidad y seguridad"><i data-icon="shield"></i><span>Privacidad</span></button>
+  <button class="rail-btn" data-nav="logs" title="Logs y eventos"><i data-icon="terminal"></i><span>Logs</span></button>
+
+  <div class="rail-foot">
+    <button class="rail-btn mini" id="btn-private" title="Modo privado"><i data-icon="moon"></i><span>Privado</span></button>
+    <div class="rail-status"><span class="dot" id="rail-dot"></span><span id="rail-conn">conectando…</span></div>
+  </div>
+</nav>
+
+<!-- barra móvil superior -->
+<header class="mobar">
+  <div class="mobar-face-slot" id="face-mount-mini"></div>
+  <div class="mobar-title"><b>{{ name }}</b><small id="mobar-mode">—</small></div>
+  <button class="moburger" id="moburger" aria-label="Menú"><i data-icon="menu"></i></button>
+</header>
+
+<main class="shell">
+
+  <!-- ═════════════ CABECERA VIVA (cara + estado) ═════════════ -->
+  <header class="hero" id="hero">
+    <div class="hero-face">
+      <div id="face-mount-main"><!-- la cara se inyecta aquí --></div>
+      <div class="face-caption">
+        <span class="fc-name">{{ name }}</span>
+        <span class="fc-state" id="hero-activity">despierto</span>
+      </div>
+    </div>
+
+    <div class="hero-info">
+      <h1 class="hero-title">Hola de nuevo. <span id="hero-mood-word">Estoy contento de verte.</span></h1>
+      <p class="hero-sub" id="hero-context">Casa tranquila. Nadie cerca.</p>
+
+      <div class="chips">
+        <span class="chip" id="chip-mode"><i data-icon="compass"></i><b>—</b></span>
+        <span class="chip chip-batt"><i data-icon="battery"></i><b id="chip-batt">--%</b><span class="bolt" id="chip-bolt">⚡</span></span>
+        <span class="chip" id="chip-conn"><i data-icon="wifi"></i><b>local</b></span>
+        <span class="chip" id="chip-autonomy"><i data-icon="sparkle"></i><b>autonomía on</b></span>
+      </div>
+
+      <div class="sensors" id="hero-sensors">
+        <span class="sensor" data-k="mic"><i data-icon="mic"></i>micrófono</span>
+        <span class="sensor" data-k="camera"><i data-icon="eye"></i>cámara</span>
+        <span class="sensor" data-k="tts"><i data-icon="speaker"></i>voz</span>
+        <span class="sensor" data-k="memory"><i data-icon="brain"></i>memoria</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- indicador global de actividad (escuchando/pensando/hablando) -->
+  <div class="act-banner" id="act-banner"><span class="dots"><i></i><i></i><i></i></span><span id="act-banner-txt"></span></div>
+
+  <!-- ═════════════ VISTAS ═════════════ -->
+  <section class="views" id="views">
+
+    <!-- ─────────── DASHBOARD ─────────── -->
+    <article class="view is-active" id="view-dashboard">
+      <div class="dash-grid">
+        <div class="card live-card">
+          <div class="card-h"><i data-icon="pulse"></i><h3>Latido actual</h3><span class="live-badge"><i></i>en vivo</span></div>
+          <div class="vitals">
+            <div class="vital"><label>Actividad</label><b id="d-activity">—</b></div>
+            <div class="vital"><label>Modo</label><b id="d-mode">—</b></div>
+            <div class="vital"><label>Emoción</label><b id="d-emotion">—</b></div>
+            <div class="vital"><label>Ubicación</label><b id="d-room">—</b></div>
+          </div>
+          <div class="mini-bars" id="d-emobars"></div>
+        </div>
+
+        <div class="card thought-card">
+          <div class="card-h"><i data-icon="bulb"></i><h3>Último pensamiento</h3></div>
+          <p class="big-quote" id="d-thought">…</p>
+          <div class="sub-line"><label>Siguiente decisión</label><span id="d-decision">…</span></div>
+          <div class="sub-line"><label>Razón</label><span id="d-reason">…</span></div>
+        </div>
+
+        <div class="card recent-card">
+          <div class="card-h"><i data-icon="clock"></i><h3>Recientes</h3></div>
+          <div class="recent-row"><i data-icon="brain"></i><div><label>Último recuerdo</label><span id="d-memory">—</span></div></div>
+          <div class="recent-row"><i data-icon="eye"></i><div><label>Último evento</label><span id="d-event">—</span></div></div>
+          <div class="recent-row"><i data-icon="sparkle"></i><div><label>Aprendizaje reciente</label><span id="d-learning">—</span></div></div>
+          <div class="recent-row" id="d-doubt-row" hidden><i data-icon="help"></i><div><label>Duda</label><span id="d-doubt">—</span></div></div>
+        </div>
+
+        <div class="card quick-chat">
+          <div class="card-h"><i data-icon="chat"></i><h3>Charla rápida</h3></div>
+          <div class="qc-last" id="qc-last">Pregúntame lo que quieras — todo empieza a latir ahí.</div>
+          <div class="qc-input">
+            <input id="qc-text" placeholder="Escribe algo a {{ name }}…" maxlength="400">
+            <button class="btn btn-primary" id="qc-send">Enviar</button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── CHAT ─────────── -->
+    <article class="view" id="view-chat">
+      <div class="chat-wrap card">
+        <div class="chat-head">
+          <div class="card-h"><i data-icon="chat"></i><h3>Conversación con {{ name }}</h3></div>
+          <div class="chat-indicators">
+            <span class="ci" data-ci="listening"><i data-icon="mic"></i>escuchando</span>
+            <span class="ci" data-ci="thinking"><i data-icon="bulb"></i>pensando</span>
+            <span class="ci" data-ci="speaking"><i data-icon="speaker"></i>hablando</span>
+          </div>
+        </div>
+        <div class="chat-scroll" id="chat-scroll" aria-live="polite"></div>
+        <div class="chat-composer">
+          <button class="mic-btn" id="chat-mic" title="Hablar con {{ name }}"><i data-icon="mic"></i></button>
+          <textarea id="chat-input" rows="1" placeholder="Escribe o usa el micrófono…"></textarea>
+          <button class="btn btn-primary send-btn" id="chat-send" title="Enviar"><i data-icon="send"></i></button>
+        </div>
+        <div class="hearing" id="hearing" hidden><span class="wave"></span>Escuchando tu voz…</div>
+      </div>
+    </article>
+
+    <!-- ─────────── MEMORIA ─────────── -->
+    <article class="view" id="view-memory">
+      <div class="split">
+        <aside class="card mem-side">
+          <h3 class="side-title">Tipos de memoria</h3>
+          <div class="mem-types" id="mem-types"></div>
+          <div class="mem-actions">
+            <button class="btn btn-ghost w100" id="mem-new"><i data-icon="plus"></i>Nueva memoria</button>
+            <div class="row2">
+              <a class="btn btn-ghost" href="/api/memories/export" download><i data-icon="download"></i>Exportar</a>
+              <label class="btn btn-ghost"><i data-icon="upload"></i>Importar<input type="file" id="mem-import" accept=".json" hidden></label>
+            </div>
+            <label class="check"><input type="checkbox" id="mem-show-archived"> Ver archivadas</label>
+          </div>
+        </aside>
+        <div class="card mem-main">
+          <div class="mem-toolbar">
+            <input id="mem-q" class="search" placeholder="Buscar en la mente de {{ name }}…">
+            <select id="mem-tag"><option value="">Etiqueta: todas</option></select>
+          </div>
+          <div class="merge-bar" id="merge-bar" hidden>
+            <span>Fusionando «<b id="merge-src-t"></b>» → selecciona el destino</span>
+            <button class="btn btn-ghost sm" id="merge-cancel">Cancelar</button>
+          </div>
+          <div class="mem-list" id="mem-list"></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── CORAZÓN / EMOCIONES ─────────── -->
+    <article class="view" id="view-heart">
+      <div class="heart-grid">
+        <div class="card heart-core">
+          <div class="card-h"><i data-icon="heart"></i><h3>Estado interno</h3>
+            <div class="seg" id="emo-mode"><button data-m="auto" class="on">Auto</button><button data-m="manual">Manual</button></div>
+          </div>
+          <div class="mood-big"><span id="hb-emoji">🙂</span><div><b id="hb-mood">—</b><small id="hb-mood-sub">—</small></div></div>
+          <div class="gauges" id="gauges"></div>
+          <p class="hint" id="emo-hint">Modo automático: los valores fluyen solos según la vida de {{ name }}. Cambia a Manual para experimentar — la cara reacciona al instante.</p>
+        </div>
+        <div class="card chart-card">
+          <div class="card-h"><i data-icon="pulse"></i><h3>Historia emocional</h3>
+            <div class="chart-legend" id="chart-legend"></div>
+          </div>
+          <canvas id="emo-chart" height="260"></canvas>
+          <p class="hint">Ventana temporal de las últimas muestras (SQLite · tabla <code>history</code>).</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── VISIÓN ─────────── -->
+    <article class="view" id="view-vision">
+      <div class="vision-grid">
+        <div class="card feed-card">
+          <div class="card-h"><i data-icon="eye"></i><h3>Vista de cámara</h3>
+            <span class="rec"><i></i>LIVE</span>
+            <button class="btn btn-ghost sm" id="cam-toggle"><i data-icon="power"></i>sensor</button>
+          </div>
+          <div class="feed" id="feed">
+            <img id="feed-img" src="/static/camera_sim.svg" alt="vista simulada">
+            <div class="feed-boxes" id="feed-boxes"></div>
+            <div class="feed-scan"></div>
+            <div class="feed-off" id="feed-off" hidden><i data-icon="eyeoff"></i>Cámara desactivada o modo privado activo</div>
+          </div>
+          <div class="feed-actions">
+            <button class="btn btn-primary sm" id="det-save"><i data-icon="brain"></i>Guardar como memoria</button>
+            <button class="btn btn-ghost sm" id="det-star"><i data-icon="star"></i>Marcar importante</button>
+            <button class="btn btn-ghost sm" id="det-ignore"><i data-icon="x"></i>Ignorar</button>
+          </div>
+        </div>
+        <div class="card det-card">
+          <div class="card-h"><i data-icon="target"></i><h3>Detecciones recientes</h3></div>
+          <div class="det-list" id="det-list"></div>
+          <div class="card-h sub"><i data-icon="users"></i><h3>Personas · Objetos · Animales</h3></div>
+          <div class="tag-cloud" id="tag-cloud"></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── CONTROL ─────────── -->
+    <article class="view" id="view-control">
+      <div class="control-grid">
+        <div class="card teleop">
+          <div class="card-h"><i data-icon="gamepad"></i><h3>Teleoperación</h3></div>
+          <div class="dpad">
+            <button data-dir="up" class="db up"><i data-icon="up"></i></button>
+            <button data-dir="left" class="db left"><i data-icon="left"></i></button>
+            <button data-dir="stop" class="db stop"><i data-icon="stop"></i></button>
+            <button data-dir="right" class="db right"><i data-icon="right"></i></button>
+            <button data-dir="down" class="db down"><i data-icon="down"></i></button>
+          </div>
+          <div class="head-pad">
+            <label>Dirección de mirada / cabeza</label>
+            <div class="look-grid" id="look-grid"><span class="look-dot" id="look-dot"></span></div>
+            <div class="row2">
+              <div class="slider"><label>Yaw</label><input type="range" min="-100" max="100" value="0" id="yaw"></div>
+              <div class="slider"><label>Pitch</label><input type="range" min="-100" max="100" value="0" id="pitch"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card modes-card">
+          <div class="card-h"><i data-icon="compass"></i><h3>Modos</h3></div>
+          <div class="mode-grid" id="mode-grid"></div>
+          <div class="switch-row">
+            <label class="switch"><input type="checkbox" id="sw-autonomy" checked><span></span>Autonomía</label>
+            <button class="btn btn-ghost sm" id="btn-base"><i data-icon="home"></i>Volver a base</button>
+          </div>
+        </div>
+
+        <div class="card status-card">
+          <div class="card-h"><i data-icon="list"></i><h3>Situación operativa</h3></div>
+          <div class="kv"><label>Tarea actual</label><b id="c-task">—</b></div>
+          <div class="kv"><label>Siguiente acción</label><b id="c-next">—</b></div>
+          <div class="kv"><label>Razón</label><b id="c-reason">—</b></div>
+          <div class="kv"><label>Seguridad</label><b id="c-security" class="ok">OK</b></div>
+          <div class="queue">
+            <label>Cola de objetivos</label>
+            <ul id="goal-list"><li class="empty">Sin objetivos pendientes</li></ul>
+            <div class="qc-input">
+              <input id="goal-in" placeholder="Añadir objetivo (p.ej. revisar cocina)">
+              <button class="btn btn-ghost sm" id="goal-add">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── MENTE ─────────── -->
+    <article class="view" id="view-mind">
+      <div class="mind-stream" id="mind-stream"></div>
+    </article>
+
+    <!-- ─────────── TAREAS ─────────── -->
+    <article class="view" id="view-tasks">
+      <div class="card tasks-card">
+        <div class="card-h"><i data-icon="list"></i><h3>Tareas y rutinas</h3>
+          <button class="btn btn-primary sm" id="task-new"><i data-icon="plus"></i>Nueva tarea</button>
+        </div>
+        <div class="task-list" id="task-list"></div>
+      </div>
+    </article>
+
+    <!-- ─────────── MAPA ─────────── -->
+    <article class="view" id="view-map">
+      <div class="split">
+        <div class="card map-card">
+          <div class="card-h"><i data-icon="map"></i><h3>Modelo del hogar</h3><span class="live-badge"><i></i>posición en vivo</span></div>
+          <div class="home-map" id="home-map">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" id="map-svg"></svg>
+            <div class="map-robot" id="map-robot"><span></span></div>
+          </div>
+          <p class="hint">Capa preparada para mapas reales (SLAM / ROS 2 <code>/map</code>). Habitaciones editables en <code>brain.ROOMS</code>.</p>
+        </div>
+        <aside class="card map-side">
+          <h3 class="side-title">Información espacial</h3>
+          <div class="kv"><label>Ubicación estimada</label><b id="mp-room">—</b></div>
+          <div class="kv"><label>Zona favorita</label><b>Salón</b></div>
+          <div class="kv"><label>Objetos importantes</label><b id="mp-objects">—</b></div>
+          <div class="zones">
+            <label>Zonas exploradas</label>
+            <div class="zone-chips" id="mp-zones"></div>
+          </div>
+          <div class="kv"><label>Estación base</label><b>Pasillo este · cargador ⚡</b></div>
+        </aside>
+      </div>
+    </article>
+
+    <!-- ─────────── MÓDULOS ─────────── -->
+    <article class="view" id="view-modules">
+      <div class="mods-grid">
+        <div class="card ver-card">
+          <div class="card-h"><i data-icon="box"></i><h3>Versión</h3></div>
+          <div class="ver-big">BAY-E <b id="mod-version">v{{ version }}</b></div>
+          <p class="hint">Núcleo FastAPI + cerebro simulado. Los módulos reales sustituyen solo sus adaptadores.</p>
+          <button class="btn btn-primary w100" id="upd-check"><i data-icon="refresh"></i>Comprobar actualizaciones</button>
+          <div class="upd-list" id="upd-list"></div>
+          <div class="card-h sub"><i data-icon="voice"></i><h3>Voces y modelos</h3></div>
+          <div class="row2">
+            <button class="btn btn-ghost sm" id="load-voice"><i data-icon="upload"></i>Cargar nueva voz</button>
+            <button class="btn btn-ghost sm" id="load-model"><i data-icon="upload"></i>Cargar modelo IA</button>
+          </div>
+        </div>
+        <div class="card mods-card">
+          <div class="card-h"><i data-icon="puzzle"></i><h3>Módulos instalados</h3></div>
+          <div class="mod-list" id="mod-list"></div>
+        </div>
+        <div class="card backup-card">
+          <div class="card-h"><i data-icon="save"></i><h3>Backup y restore</h3></div>
+          <button class="btn btn-primary w100" id="bk-create"><i data-icon="save"></i>Crear backup ahora</button>
+          <ul class="bk-list" id="bk-list"></ul>
+          <div class="card-h sub"><i data-icon="clock"></i><h3>Changelog</h3></div>
+          <div class="changelog" id="changelog"></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── AJUSTES ─────────── -->
+    <article class="view" id="view-settings">
+      <div class="set-tabs" id="set-tabs"></div>
+      <div class="card set-body" id="set-body"></div>
+    </article>
+
+    <!-- ─────────── PRIVACIDAD ─────────── -->
+    <article class="view" id="view-privacy">
+      <div class="priv-grid">
+        <div class="card priv-danger">
+          <div class="card-h"><i data-icon="alert"></i><h3>Borrado de memorias</h3></div>
+          <div class="purge-form">
+            <div class="row2">
+              <button class="btn danger w100" data-purge="all"><i data-icon="trash"></i>Borrar TODAS</button>
+              <label class="switch big"><input type="checkbox" id="pv-private"><span></span>Modo privado total</label>
+            </div>
+            <div class="purge-row">
+              <select id="pv-type"><option value="episodic">Episódicas</option><option value="semantic">Semánticas</option><option value="person">Personas</option><option value="object">Objetos</option><option value="spatial">Espaciales</option><option value="routine">Rutinas</option></select>
+              <button class="btn danger sm" data-purge="type">Borrar tipo</button>
+            </div>
+            <div class="purge-row">
+              <input id="pv-person" placeholder="Nombre de persona (p.ej. Ana)">
+              <button class="btn danger sm" data-purge="person">Borrar persona</button>
+            </div>
+            <div class="purge-row">
+              <input id="pv-date" type="date">
+              <button class="btn danger sm" data-purge="before">Borrar anteriores</button>
+            </div>
+          </div>
+          <p class="hint warn">Estas acciones son irreversibles y quedan registradas en el log sensible.</p>
+        </div>
+        <div class="card">
+          <div class="card-h"><i data-icon="shield"></i><h3>Zonas y permisos</h3></div>
+          <label class="fld"><span>Zonas restringidas</span><input id="pv-zones" placeholder="Estudio, Dormitorio…"></label>
+          <label class="fld"><span>Objetos prohibidos</span><input id="pv-forb" placeholder="Documentos personales…"></label>
+          <label class="fld"><span>Retención de memoria (días)</span><input id="pv-ret" type="number" min="1" max="3650"></label>
+          <div class="perm-list" id="perm-list"></div>
+          <button class="btn btn-primary sm" id="pv-save"><i data-icon="check"></i>Guardar política</button>
+        </div>
+        <div class="card">
+          <div class="card-h"><i data-icon="key"></i><h3>Acciones sensibles (log)</h3></div>
+          <div class="sens-list" id="sens-list"></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── LOGS ─────────── -->
+    <article class="view" id="view-logs">
+      <div class="card logs-card">
+        <div class="card-h"><i data-icon="terminal"></i><h3>Logs y eventos</h3>
+          <div class="seg" id="log-seg"><button data-l="human" class="on">Humano</button><button data-l="tech">Técnico</button></div>
+          <select id="log-level"><option value="">Todos los niveles</option><option>info</option><option>warn</option><option>error</option><option>sensitive</option><option>debug</option></select>
+        </div>
+        <div class="log-human" id="log-human"></div>
+        <pre class="log-tech" id="log-tech" hidden></pre>
+      </div>
+    </article>
+
+  </section>
+</main>
+
+<!-- ═════════════ MODALES ═════════════ -->
+<div class="modal-back" id="modal-back" hidden>
+  <div class="modal" id="modal">
+    <div class="modal-h"><h3 id="modal-title">Detalle</h3><button class="mx" id="modal-x">✕</button></div>
+    <div class="modal-b" id="modal-body"></div>
+    <div class="modal-f" id="modal-foot"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="/static/js/icons.js"></script>
+<script src="/static/js/face.js"></script>
+<script src="/static/js/ws.js"></script>
+<script src="/static/js/views.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

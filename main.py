@@ -14,7 +14,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,30 +55,9 @@ app.add_middleware(
 
 # ------------------------------------------------------------------ estáticos
 app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")
-# API pública versionada.
-app.include_router(api_router)
-
-
-def _versioned_api_path(path: str) -> str:
-    """Mapea el alias legado /api/* hacia el contrato estable /api/v1/*."""
-    if path.startswith("/api/") and not path.startswith("/api/v1/"):
-        return "/api/v1" + path[len("/api"):]
-    return path
-
-
-@app.middleware("http")
-async def legacy_api_alias(request: Request, call_next):
-    original = request.scope.get("path", "")
-    rewritten = _versioned_api_path(original)
-    legacy = rewritten != original
-    if legacy:
-        request.scope["path"] = rewritten
-        request.scope["raw_path"] = rewritten.encode("utf-8")
-    response = await call_next(request)
-    if legacy:
-        response.headers["Deprecation"] = "true"
-        response.headers["X-BAYE-API-Alias"] = "legacy"
-    return response
+# API pública versionada. /api se conserva temporalmente como alias de compatibilidad.
+app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="/api", include_in_schema=False)
 
 # ------------------------------------------------------------------ plantillas
 jinja = Environment(loader=FileSystemLoader(ROOT_DIR / "templates"), autoescape=True)

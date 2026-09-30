@@ -25,6 +25,7 @@ from .config import APP_VERSION, DEFAULT_MODULES, DEFAULT_SETTINGS
 from app.autonomy.engine import AUTONOMY
 from app.autonomy.scheduler import SCHEDULER
 from app.cognition.conversation import respond as conversation_respond
+from app.learning.routines import strongest as strongest_routine
 from app.adapters.robot import ROBOT
 from .events import BUS
 from .guardian import GUARDIAN
@@ -91,6 +92,7 @@ class BayeBrain:
         self.emotion_mode = "auto"           # auto | manual
         self.s = self._initial_state()
         self._last_hist_push = 0.0
+        self._last_learning_scan = 0.0
 
     # ------------------------------------------------------------ init
     def _initial_state(self) -> dict:
@@ -408,6 +410,7 @@ class BayeBrain:
         label = det.get("label", "algo")
         conf = float(det.get("confidence", 0.5))
         kind = det.get("kind", "object")
+        det.setdefault("room", s.get("position", {}).get("room", ""))
         s["last_event"] = f"Detecté: {label} ({int(conf*100)}%)."
         s["activity"] = "watching"
         s["activity_until"] = time.time() + 3
@@ -570,6 +573,13 @@ class BayeBrain:
             s["context"] = "Reposo del núcleo. Sin afirmar actividad física no observada."
         else:
             s["context"] = "Núcleo activo. Sin datos ambientales confirmados mientras no haya sensores reales."
+
+        # aprendizaje de rutinas: solo a partir de observaciones repetidas
+        if now - self._last_learning_scan > 60:
+            self._last_learning_scan = now
+            pattern = strongest_routine()
+            if pattern and float(pattern.get("confidence", 0)) >= 0.6:
+                s["learning"] = pattern["description"]
 
         # histórico para gráficas (cada ~20 s) ----------------------------------
         if now - self._last_hist_push > 20:

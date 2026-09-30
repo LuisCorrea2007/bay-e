@@ -36,9 +36,9 @@ DEFAULT_IDENTITY = {
 # Cada módulo tiene un conmutador on/off. Cuando exista hardware real,
 # el adaptador correspondiente registrará aquí su estado "online".
 DEFAULT_MODULES = [
-    {"id": "vision",        "name": "Visión",            "icon": "eye",     "enabled": True,  "version": "0.9.4", "desc": "Contrato de visión listo; el adaptador de cámara/modelo real se conecta por separado."},
-    {"id": "voice",         "name": "Voz (TTS)",         "icon": "speaker", "enabled": True,  "version": "1.2.0", "desc": "Síntesis de voz cálida. Preparado para Piper / XTTS."},
-    {"id": "stt",           "name": "Escucha (STT)",     "icon": "mic",     "enabled": True,  "version": "0.8.1", "desc": "Reconocimiento de speech. Preparado para Whisper local."},
+    {"id": "vision",        "name": "Visión",            "icon": "eye",     "enabled": False, "version": "0.9.4", "desc": "Contrato de visión listo; el adaptador de cámara/modelo real se conecta por separado."},
+    {"id": "voice",         "name": "Voz (TTS)",         "icon": "speaker", "enabled": False, "version": "1.2.0", "desc": "Síntesis de voz cálida. Preparado para Piper / XTTS."},
+    {"id": "stt",           "name": "Escucha (STT)",     "icon": "mic",     "enabled": False, "version": "0.8.1", "desc": "Reconocimiento de speech. Preparado para Whisper local."},
     {"id": "memory",        "name": "Memoria",           "icon": "brain",   "enabled": True,  "version": "1.1.2", "desc": "Memorias episódicas, semánticas, personas, objetos, espacio y rutinas."},
     {"id": "emotions",      "name": "Emociones",         "icon": "heart",   "enabled": True,  "version": "1.0.0", "desc": "Motor afectivo: energía, curiosidad, ánimo y expresión facial."},
     {"id": "navigation",    "name": "Navegación",        "icon": "compass", "enabled": False, "version": "0.7.3", "desc": "Contrato preparado para ROS 2/Nav2. Desactivado hasta conectar hardware real."},

@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f7f7f5">
+  <meta name="theme-color" content="#f6f6f3">
   <title>BAY-E</title>
-  <link rel="stylesheet" href="/static/css/baye.css">
+  <link rel="stylesheet" href="/static/css/baye.css?v={{ version }}">
 </head>
 <body>
 <div class="app">
   <aside class="sidebar" id="sidebar">
     <div class="side-head">
-      <button class="logo-btn" id="home-btn" aria-label="BAY-E"><span class="mini-eye"></span><i></i><span class="mini-eye"></span></button>
-      <strong>BAY-E</strong>
-      <button class="side-close" id="side-close">×</button>
+      <button class="logo-btn" id="home-btn" aria-label="Inicio BAY-E"><span></span><i></i><span></span></button>
+      <div><strong>BAY-E</strong><small id="version-label">v{{ version }}</small></div>
+      <button class="side-close" id="side-close" aria-label="Cerrar">×</button>
     </div>
     <button class="new-chat" id="new-chat">＋ Nuevo chat</button>
     <div class="side-label">CONVERSACIONES</div>
@@ -21,24 +21,34 @@
     <div class="side-bottom">
       <button data-panel="mind">♡ <span>Corazón y mente</span></button>
       <button data-panel="memory">◇ <span>Memoria</span></button>
+      <button data-panel="tasks">✓ <span>Tareas y rutinas</span></button>
+      <button data-panel="world">⌂ <span>Casa y mundo</span></button>
       <button data-panel="vision">◉ <span>Visión</span></button>
+      <button data-panel="control">＋ <span>Cuerpo y control</span></button>
       <button data-panel="devices">⌁ <span>Dispositivos</span></button>
-      <button data-panel="system">⚙ <span>Sistema</span></button>
+      <button data-panel="system">⚙ <span>Sistema y privacidad</span></button>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <button class="menu-btn" id="menu-btn">☰</button>
+      <button class="menu-btn" id="menu-btn" aria-label="Menú">☰</button>
       <div class="top-title"><strong id="thread-title">BAY-E</strong><span id="status-line">conectando…</span></div>
-      <div class="top-actions"><span class="provider" id="provider">IA · —</span><button id="mind-btn">Mente</button></div>
+      <div class="top-actions">
+        <span class="live-dot" id="live-dot" title="Estado del enlace"></span>
+        <span class="provider" id="provider">IA · —</span>
+        <button id="mind-btn">Mente</button>
+      </div>
     </header>
 
     <section class="conversation" id="conversation">
       <div class="empty-state" id="empty-state">
         <div id="face-main" class="face-main"></div>
         <h1>Hola, soy BAY-E.</h1>
-        <p>Tu compañero. Puedo conversar, recordar, aprender reglas, observar y ayudarte desde un mismo lugar.</p>
+        <p>Estoy aquí para conversar, recordar, aprender y, cuando mi cuerpo real esté conectado, ayudarte en casa de forma segura.</p>
+        <div class="status-pills">
+          <span id="pill-core">Core · activo</span><span id="pill-body">Cuerpo · desconectado</span><span id="pill-privacy">Privacidad · normal</span>
+        </div>
         <div class="suggestions">
           <button data-prompt="¿Qué recuerdas de mí?">¿Qué recuerdas de mí?</button>
           <button data-prompt="¿Cómo te sientes ahora?">¿Cómo te sientes?</button>
@@ -51,43 +61,51 @@
 
     <div class="composer-zone">
       <div class="composer">
-        <button class="voice-btn" id="voice-btn" title="Hablar">◉</button>
+        <button class="voice-btn" id="voice-btn" title="Hablar" aria-label="Hablar">◉</button>
         <textarea id="prompt" rows="1" maxlength="8000" placeholder="Escribe a BAY-E…"></textarea>
-        <button class="send-btn" id="send-btn" title="Enviar">↑</button>
+        <button class="send-btn" id="send-btn" title="Enviar" aria-label="Enviar">↑</button>
       </div>
-      <div class="composer-foot"><span id="activity">Listo</span><span>BAY-E puede equivocarse. Las acciones físicas pasan por su capa de seguridad.</span></div>
+      <div class="composer-foot"><span id="activity">Listo</span><span>Las acciones físicas siempre pasan por Safety Governor.</span></div>
     </div>
   </main>
 
   <aside class="drawer" id="drawer">
-    <header><div><small>ADMINISTRAR</small><h2 id="drawer-title">Corazón y mente</h2></div><button id="drawer-close">×</button></header>
+    <header><div><small>ADMINISTRAR</small><h2 id="drawer-title">Corazón y mente</h2></div><button id="drawer-close" aria-label="Cerrar">×</button></header>
 
     <section class="drawer-view active" data-view="mind">
       <div class="mind-face" id="face-mind"></div>
-      <div class="state-card"><div><small>ESTADO</small><strong id="mind-state">—</strong></div><span id="mind-mode">—</span></div>
-      <div class="mind-readout"><label>Pensamiento operativo</label><p id="mind-thought">—</p></div>
+      <div class="state-card"><div><small>ESTADO VISIBLE</small><strong id="mind-state">—</strong></div><span id="mind-mode">—</span></div>
+      <div class="drive-grid" id="drive-grid"></div>
+      <div class="mind-readout"><label>Resumen operativo</label><p id="mind-thought">—</p></div>
       <div class="mind-readout"><label>Razón actual</label><p id="mind-reason">—</p></div>
       <div class="mind-readout"><label>Siguiente decisión</label><p id="mind-next">—</p></div>
-
+      <p class="help">Esta vista muestra estado y explicabilidad estructurada. No expone razonamiento interno privado.</p>
       <div class="section-head"><div><small>IDENTIDAD EDITABLE</small><h3>Reglas, principios y objetivos</h3></div></div>
-      <p class="help">Esto modifica el comportamiento de BAY-E. No muestra ni edita razonamiento privado interno.</p>
       <form class="rule-form" id="rule-form">
         <select id="rule-kind">
-          <option value="restriction">Restricción</option>
-          <option value="principle">Principio</option>
-          <option value="goal">Objetivo</option>
-          <option value="belief">Creencia confirmada</option>
-          <option value="note">Nota mental</option>
+          <option value="restriction">Restricción</option><option value="principle">Principio</option>
+          <option value="goal">Objetivo</option><option value="belief">Creencia confirmada</option><option value="note">Nota mental</option>
         </select>
-        <textarea id="rule-content" placeholder="Ej.: Nunca despiertes a nadie por la noche salvo emergencia." required></textarea>
+        <textarea id="rule-content" placeholder="Ej.: Nunca afirmes que te moviste sin confirmación del hardware." required></textarea>
         <div class="rule-row"><label>Prioridad <input id="rule-priority" type="number" min="0" max="100" value="70"></label><button type="submit">Agregar</button></div>
       </form>
       <div class="rule-list" id="rule-list"></div>
     </section>
 
     <section class="drawer-view" data-view="memory">
-      <input class="search" id="memory-search" placeholder="Buscar recuerdos…">
+      <div class="toolbar"><input class="search" id="memory-search" placeholder="Buscar recuerdos…"><select id="memory-type"><option value="">Todos</option><option>episodic</option><option>semantic</option><option>person</option><option>object</option><option>spatial</option><option>routine</option></select></div>
       <div class="card-list" id="memory-list"></div>
+    </section>
+
+    <section class="drawer-view" data-view="tasks">
+      <form class="rule-form" id="task-form"><input id="task-title" placeholder="Nueva tarea o rutina" required><textarea id="task-description" placeholder="Descripción opcional"></textarea><div class="rule-row"><select id="task-repeat"><option value="">Una vez</option><option value="daily">Diaria</option><option value="weekly">Semanal</option></select><button type="submit">Crear</button></div></form>
+      <div class="card-list" id="task-list"></div>
+    </section>
+
+    <section class="drawer-view" data-view="world">
+      <div class="world-map" id="world-map"><div class="map-room"><span>Sin mapear</span><i id="robot-dot" title="BAY-E"></i></div></div>
+      <div class="state-card"><div><small>POSICIÓN</small><strong id="world-position">Sin confirmar</strong></div><span id="world-count">0 entidades</span></div>
+      <div class="card-list" id="world-list"></div>
     </section>
 
     <section class="drawer-view" data-view="vision">
@@ -96,23 +114,39 @@
       <button class="wide-btn" data-prompt="¿Qué ves ahora mismo?">Preguntar por lo que ve</button>
     </section>
 
+    <section class="drawer-view" data-view="control">
+      <div class="control-status"><span id="control-hardware">Cuerpo desconectado</span><span id="control-safety">Safety · —</span></div>
+      <div class="mode-grid">
+        <button data-mode="idle">Reposo activo</button><button data-mode="observe">Observar</button>
+        <button data-mode="explore">Explorar</button><button data-mode="follow">Seguir</button>
+        <button data-mode="patrol">Patrullar</button><button data-mode="rest">Dormir</button>
+      </div>
+      <div class="dpad" aria-label="Control de movimiento">
+        <button data-move="forward">↑</button><button data-move="left">←</button><button class="stop" data-move="stop">■</button><button data-move="right">→</button><button data-move="backward">↓</button>
+      </div>
+      <div class="control-actions"><button id="return-base">⌂ Volver a base</button><button id="toggle-autonomy">Autonomía</button><button class="danger-solid" id="estop">PARADA</button></div>
+      <p class="help">Si no existe heartbeat de hardware real, BAY-E bloqueará locomoción y manipulación en vez de simular éxito.</p>
+    </section>
+
     <section class="drawer-view" data-view="devices">
-      <p class="help">Teléfonos y futuros sensores que comparten percepción con el mismo BAY-E Core.</p>
+      <p class="help">Teléfonos y futuros sensores comparten percepción con el mismo BAY-E Core; no crean otra personalidad.</p>
       <div class="card-list" id="device-list"></div>
     </section>
 
     <section class="drawer-view" data-view="system">
-      <div class="card-list" id="diagnostics"></div>
-      <button class="wide-btn" data-prompt="Muéstrame tu diagnóstico del sistema">Explicarlo en el chat</button>
+      <div class="section-head"><small>DIAGNÓSTICO</small><h3>Core y adaptadores</h3></div><div class="card-list" id="diagnostics"></div>
+      <div class="section-head"><small>MÓDULOS</small><h3>Capacidades</h3></div><div class="card-list" id="module-list"></div>
+      <div class="section-head"><small>PRIVACIDAD</small><h3>Datos y sensores</h3></div>
+      <div class="settings-card"><label><span>Modo privado<small>Detiene cámara y escucha compatibles.</small></span><input id="private-mode" type="checkbox"></label><label><span>Autonomía<small>Permite proponer objetivos; no salta seguridad.</small></span><input id="autonomy-setting" type="checkbox"></label></div>
+      <div class="system-actions"><button id="backup-btn">Crear backup</button><button id="retention-btn">Aplicar retención</button><button class="danger-outline" id="purge-btn">Borrar toda la memoria</button></div>
+      <div class="section-head"><small>EVENTOS</small><h3>Registro reciente</h3></div><div class="card-list logs" id="log-list"></div>
     </section>
   </aside>
 
-  <div class="modal" id="edit-modal" hidden>
-    <div class="modal-card"><h3>Editar mensaje</h3><textarea id="edit-text"></textarea><div><button id="edit-cancel">Cancelar</button><button class="primary" id="edit-save">Guardar</button></div></div>
-  </div>
+  <div class="modal" id="edit-modal" hidden><div class="modal-card"><h3>Editar mensaje</h3><textarea id="edit-text"></textarea><div><button id="edit-cancel">Cancelar</button><button class="primary" id="edit-save">Guardar</button></div></div></div>
   <div class="toast" id="toast"></div>
 </div>
-<script src="/static/js/face.js"></script>
-<script src="/static/js/app.js"></script>
+<script src="/static/js/face.js?v={{ version }}"></script>
+<script src="/static/js/app.js?v={{ version }}"></script>
 </body>
 </html>

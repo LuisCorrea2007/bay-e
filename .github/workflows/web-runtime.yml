@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/chat-mind-mobile
+      - release/**
   workflow_dispatch:
 
 jobs:
@@ -40,6 +41,9 @@ jobs:
               b=p.chromium.launch(headless=True)
               page=b.new_page(viewport={"width":1440,"height":950})
               page.goto("http://127.0.0.1:8300", wait_until="networkidle")
+              assert page.locator("#face-main .eye").count() == 2
+              assert page.locator("#face-main .bridge").count() == 1
+              assert page.locator("#face-main").inner_text().strip() == ""
               page.click("#new-chat")
               page.wait_for_timeout(300)
               page.fill("#prompt","recuerda que la prueba móvil funciona")
@@ -57,6 +61,12 @@ jobs:
               page.wait_for_timeout(400)
               assert page.locator(".rule-card").count() >= 1
               page.screenshot(path=str(out/"baye-heart-mind.png"), full_page=True)
+              page.click("[data-panel=control]")
+              page.wait_for_timeout(200)
+              page.click("[data-move=forward]")
+              page.wait_for_timeout(250)
+              assert "desconectado" in page.locator("#control-hardware").inner_text().lower()
+              page.screenshot(path=str(out/"baye-control.png"), full_page=True)
               b.close()
           PY
           python /tmp/test_ui.py

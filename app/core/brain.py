@@ -334,7 +334,7 @@ class BayeBrain:
                 db.log("info", "control", f"Modo → {MODE_LABELS[m]}", f"set_mode:{m}")
                 BUS.publish("robot.mode_changed", {"mode": m}, source="brain")
         elif name == "move":
-            decision = SAFETY.evaluate_motion(p.get("dir", "stop"), s)
+            decision = SAFETY.evaluate_motion(p.get("dir", "stop"), s, p)
             s["movement"] = {"dir": decision.normalized["dir"], "since": time.time()}
             if not decision.allowed:
                 s["activity"] = "idle"
@@ -372,7 +372,7 @@ class BayeBrain:
                     GUARDIAN.report("robot", "degraded", repr(exc))
         elif name == "arm":
             side = str(p.get("side", ""))
-            decision = SAFETY.evaluate_manipulation(side, s)
+            decision = SAFETY.evaluate_manipulation(side, s, p)
             if not decision.allowed:
                 db.log("warn", "safety", "Orden de brazo bloqueada", decision.code)
                 BUS.publish("robot.manipulation_blocked", decision.to_dict(), source="safety")

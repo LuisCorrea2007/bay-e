@@ -6,6 +6,7 @@ on:
       - main
       - integration/**
       - feature/**
+      - release/**
   pull_request:
 
 jobs:

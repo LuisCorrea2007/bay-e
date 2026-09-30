@@ -555,6 +555,29 @@ def list_messages(limit: int = 200, thread_id: str = "") -> list[dict]:
     return out
 
 
+def search_messages(q: str, limit: int = 50) -> list[dict]:
+    q = " ".join((q or "").split()).strip()
+    if not q:
+        return []
+    like = f"%{q}%"
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(
+            "SELECT m.id,m.role,m.content,m.created_at,m.thread_id,t.title AS thread_title,t.archived "
+            "FROM messages m LEFT JOIN chat_threads t ON t.id=m.thread_id "
+            "WHERE m.deleted=0 AND m.content LIKE ? "
+            "ORDER BY m.created_at DESC LIMIT ?",
+            (like, max(1, min(200, int(limit)))),
+        ).fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["archived"] = bool(d.get("archived"))
+        out.append(d)
+    return out
+
+
 def update_message(msg_id: str, content: str) -> Optional[dict]:
     content = (content or "").strip()
     if not content:

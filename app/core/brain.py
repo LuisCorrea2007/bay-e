@@ -21,7 +21,9 @@ import time
 from typing import Callable, Optional
 
 from . import db
-from .config import DEFAULT_MODULES, DEFAULT_SETTINGS
+from .config import APP_VERSION, DEFAULT_MODULES, DEFAULT_SETTINGS
+from app.autonomy.engine import AUTONOMY
+from app.cognition.conversation import respond as conversation_respond
 from .events import BUS
 from .guardian import GUARDIAN
 from .safety import SAFETY
@@ -108,6 +110,7 @@ class BayeBrain:
             "charging": False,
             "connection": "software-only",
             "wifi": 0.0,
+            "model_provider": "fallback",
             "sensors": {"mic": False, "camera": False, "tts": False, "memory": True},
             "emotions": emotions,
             "expression": {"emotion": "happy", "gaze": {"x": 0, "y": 0}},
@@ -166,6 +169,7 @@ class BayeBrain:
         return {
             "type": "state",
             "ts": now,
+            "version": APP_VERSION,
             "alive": s["alive"],
             "mode": s["mode"],
             "mode_label": MODE_LABELS[s["mode"]],
@@ -201,6 +205,9 @@ class BayeBrain:
             "demo_mode": s.get("demo_mode", False),
             "guardian": GUARDIAN.snapshot(),
             "hardware_ready": self.hardware_ready,
+            "model_provider": s.get("model_provider", "fallback"),
+            "settings": s["settings"],
+            "modules": s["modules"],
             "uptime": int(now - s["uptime_since"]),
         }
 

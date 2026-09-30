@@ -31,6 +31,13 @@ def handle(text: str) -> IntentResult:
         mem = SKILLS.run("memory.remember", content=content, type="semantic")
         return IntentResult(True, f"Lo recordaré: {content}", "curious", {"memory": mem})
 
+    if re.match(r"^(?:qué|que)\s+recuerdas\s+de\s+m[ií][?]?$", raw, re.I):
+        hits = SKILLS.run("memory.recent", limit=6)
+        if not hits:
+            return IntentResult(True, "Todavía no tengo recuerdos personales confirmados sobre ti.", "thinking", {"memories": []})
+        lines = "; ".join(x["content"] for x in hits[:5])
+        return IntentResult(True, f"Estos son algunos recuerdos que tengo contigo: {lines}", "curious", {"memories": hits})
+
     m = re.match(r"^(?:qué|que)\s+(?:recuerdas|sabes)\s+(?:de|sobre)\s+(.+?)[?]?$", raw, re.I)
     if m:
         q = m.group(1).strip()
@@ -39,6 +46,21 @@ def handle(text: str) -> IntentResult:
             return IntentResult(True, f"No tengo recuerdos confirmados sobre {q}.", "thinking", {"memories": []})
         lines = "; ".join(x["content"] for x in hits[:3])
         return IntentResult(True, f"Recuerdo esto sobre {q}: {lines}", "curious", {"memories": hits})
+
+    m = re.match(r"^(?:olvida definitivamente|borra definitivamente de tu memoria)\s+(?:que\s+)?(.+)$", raw, re.I)
+    if m:
+        q = m.group(1).strip()
+        result = SKILLS.run("memory.forget", query=q)
+        n = int(result.get("deleted", 0))
+        return IntentResult(True, f"He eliminado {n} recuerdo{'s' if n != 1 else ''} relacionado{'s' if n != 1 else ''} con «{q}».", "attentive", {"forget": result})
+
+    if re.match(r"^(?:qué|que)\s+tareas\s+(?:tengo|hay)[?]?$|^(?:lista|muéstrame|muestrame)\s+(?:mis\s+)?tareas$", raw, re.I):
+        tasks = SKILLS.run("task.list")
+        active = [t for t in tasks if t.get("status") not in ("done", "cancelled")]
+        if not active:
+            return IntentResult(True, "No tienes tareas pendientes.", "curious", {"tasks": []})
+        names = "; ".join(t["title"] for t in active[:8])
+        return IntentResult(True, f"Tareas pendientes: {names}", "curious", {"tasks": active, "ui_action": {"type": "navigate", "view": "tasks"}})
 
     m = re.match(r"^(?:crea|añade|agrega)\s+(?:una\s+)?tarea\s+(?:para\s+)?(.+)$", raw, re.I)
     if m:

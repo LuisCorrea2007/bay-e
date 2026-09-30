@@ -53,6 +53,13 @@ AVAILABLE_LANGUAGES = {"es": "Español", "en": "English", "ca": "Català", "fr":
 # ---------------------------------------------------------------- defaults
 DEFAULT_SETTINGS = {
     "system": {"demo_mode": False, "allow_synthetic_events": False},
+    "ai": {
+        "provider_order": "llama.cpp,ollama",
+        "llama_url": "http://127.0.0.1:8080",
+        "llama_model": "local",
+        "ollama_url": "http://127.0.0.1:11434",
+        "ollama_model": "qwen2.5:3b"
+    },
     "identity": dict(DEFAULT_IDENTITY),
     "audio": {"tts_enabled": True, "wake_word": "bay-e", "volume": 0.8, "rate": 1.0},
     "vision": {"camera_enabled": True, "fps": 12, "detect_people": True, "detect_animals": True, "save_captures": True},

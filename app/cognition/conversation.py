@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.autonomy.skills import SKILLS
+from app.cognition.agents import operational_context
 from app.cognition.model_router import MODELS, ModelReply
 from app.memory.retrieval import context_block
 from app.world.model import snapshot as world_snapshot
@@ -55,7 +56,8 @@ async def respond(user_text: str, *, state: dict[str, Any], history: list[dict[s
     operational = (
         f"Modo={state.get('mode')}; actividad={state.get('activity')}; "
         f"hardware_ready={state.get('hardware_ready', False)}; "
-        f"private_mode={state.get('private_mode', False)}."
+        f"private_mode={state.get('private_mode', False)}. "
+        + operational_context(state)
     )
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.append({"role": "system", "content": f"ESTADO OPERATIVO:\n{operational}\n\nMEMORIAS RELEVANTES:\n{memories}\n\nMUNDO CONOCIDO:\n{world_summary}"})

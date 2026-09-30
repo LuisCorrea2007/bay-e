@@ -65,3 +65,25 @@ Topics currently supported:
 
 The Health view records measurements and descriptive trends. It is not a
 medical device, does not diagnose disease and does not prescribe medication.
+
+## Reconocimiento de personas, opcional
+
+BAY-E no crea perfiles faciales automáticamente. Para esta función configura
+modelos locales OpenCV YuNet y SFace con:
+
+- `BAYE_FACE_DETECTOR_ONNX`
+- `BAYE_FACE_RECOGNIZER_ONNX`
+
+Luego abre **Visión > Aprender persona**. El enrolamiento exige confirmar
+consentimiento explícito. BAY-E procesa el fotograma localmente y persiste el
+vector facial y el nombre; no conserva la foto usada para el enrolamiento.
+
+Los perfiles se pueden revisar y borrar desde Visión. El borrado de todas las
+memorias y el borrado por persona también eliminan los perfiles biométricos
+correspondientes.
+
+## Activación por nombre
+
+En Chat, el botón «BAY-E» activa una escucha continua usando la API de voz del
+navegador cuando está disponible. Esta función es voluntaria y se desactiva
+automáticamente al activar modo privado.

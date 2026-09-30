@@ -123,6 +123,17 @@ jobs:
               assert page.locator(".learning-card").count() == 0
               page.screenshot(path=str(out/"baye-learning.png"), full_page=True)
               page.click("#drawer-close")
+              page.click("[data-panel=memory]")
+              page.wait_for_timeout(350)
+              assert page.locator("#memory-list .info-card").count() >= 1
+              assert "turquesa" in page.locator("#memory-list").inner_text().lower()
+              page.screenshot(path=str(out/"baye-memory.png"), full_page=True)
+              page.click("#drawer-close")
+              page.click("[data-panel=system]")
+              page.wait_for_timeout(400)
+              assert page.locator("#diagnostics .info-card").count() >= 1
+              page.screenshot(path=str(out/"baye-diagnostics.png"), full_page=True)
+              page.click("#drawer-close")
               page.fill("#chat-search","turquesa")
               page.wait_for_timeout(500)
               assert page.locator(".search-hit").count() >= 1
@@ -148,7 +159,13 @@ jobs:
       - name: Print BAY-E server log on failure
         if: failure()
         run: cat /tmp/baye.log || true
+      - name: Collect BAY-E server log
+        if: always()
+        run: |
+          mkdir -p runtime
+          cp /tmp/baye.log runtime/baye-server.log || true
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: BAY-E-web-runtime
           path: runtime/

@@ -45,6 +45,7 @@ async def respond(user_text: str, *, state: dict[str, Any], history: list[dict[s
             text=intent.text,
             provider="skill",
             model="deterministic-intent",
+            ui_action=(intent.payload or {}).get("ui_action"),
         ), created_memory
 
     memories = context_block(user_text, limit=6)

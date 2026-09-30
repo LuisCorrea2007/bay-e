@@ -36,6 +36,7 @@ class ConversationLearningTests(unittest.TestCase):
         rejected = db.resolve_learning_candidate(candidate["id"], "reject")
         self.assertEqual(rejected["status"], "rejected")
         self.assertEqual(rejected["memory_id"], "")
+        self.assertIsNone(db.get_learning_candidate(candidate["id"]))
 
 
 if __name__ == "__main__":

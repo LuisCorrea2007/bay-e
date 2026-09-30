@@ -786,6 +786,7 @@ const Views = (() => {
       if (this.mounted) return; this.mounted = true;
       $("#upd-check").addEventListener("click", async () => {
         const r = await Net.api("POST", "/api/updates/check", {});
+        if (!r.available.length) { $("#upd-list").innerHTML = `<p class="empty">No hay proveedor de actualizaciones configurado.</p>`; return; }
         $("#upd-list").innerHTML = r.available.map((u) => `
           <div class="upd">${Icons.svg("sparkle")}<span>${esc(u.name)}</span><span class="kind">${u.kind}</span>
           <button class="btn sm btn-primary" data-n="${esc(u.name)}">instalar</button></div>`).join("");
@@ -795,8 +796,21 @@ const Views = (() => {
         }));
       });
       $("#bk-create").addEventListener("click", async () => { await Net.api("POST", "/api/backups", {}); toast("Backup creado 💾"); this.loadBackups(); });
-      $("#load-voice").addEventListener("click", () => toast("Voz «guardián» descargada e instalada 🎙️"));
-      $("#load-model").addEventListener("click", () => toast("Modelo de visión v0.9.5 cargado 🧠"));
+      $("#load-voice").addEventListener("click", async () => {
+        const st = await Net.api("GET", "/api/audio/status");
+        const html = '<div class="kv"><label>Piper</label><b>' + (st.tts_available ? "disponible" : "no configurado") + '</b></div>' +
+          '<div class="kv"><label>whisper.cpp</label><b>' + (st.stt_available ? "disponible" : "no configurado") + '</b></div>' +
+          '<p class="hint">Las rutas se configuran en Ajustes > Hardware / ROS 2 o mediante .env.</p>';
+        modal("Voz local", html);
+      });
+      $("#load-model").addEventListener("click", async () => {
+        const st = await Net.api("GET", "/api/models");
+        const providers = (st.providers || []).map((p) => esc(p.name) + " · " + esc(p.model || "")).join(" → ") || "ninguno";
+        const html = '<div class="kv"><label>Último proveedor</label><b>' + esc(st.last_provider) + '</b></div>' +
+          '<div class="kv"><label>Proveedores</label><b>' + providers + '</b></div>' +
+          '<p class="hint">Configura llama.cpp u Ollama en Ajustes > Cerebro IA. El fallback no finge una respuesta inteligente.</p>';
+        modal("Cerebro local", html);
+      });
       $("#changelog").innerHTML = `
         <b>v1.1.0-dev</b> · Núcleo real: model router local, World Model, OpenCV, Safety Governor, Guardian, salud y ROS 2 opcional.<br>\n        <b>v1.0.0</b> · 30/09/2026 — Nacimiento de BAY-E: cara viva, memoria SQLite, WebSocket en tiempo real.<br>
         <b>v0.9.4</b> — Módulo de visión: detección de personas, animales y movimiento.<br>

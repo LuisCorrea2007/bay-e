@@ -97,6 +97,18 @@ const Views = (() => {
       });
       Net.on("chat_partial", (m) => this.partial(m));
       Net.on("indicator", (m) => this.indicator(m.value));
+      Net.on("model", (m) => {
+        const pill = $("#chat-model-pill");
+        if (pill) pill.textContent = `${m.provider} · ${m.model}${m.degraded ? " · fallback" : ""}`;
+      });
+      Net.on("ui_action", (m) => {
+        const a = m.action || {};
+        if (a.type === "navigate" && a.view) setTimeout(() => App.go(a.view), 250);
+      });
+      $("#chat-quick-actions [data-prompt]").forEach((b) => b.addEventListener("click", () => {
+        $("#chat-input").value = b.dataset.prompt;
+        this.submit();
+      }));
     },
     async loadHistory() {
       const { messages } = await Net.api("GET", "/api/chat/history?limit=120");
@@ -122,6 +134,8 @@ const Views = (() => {
       try {
         const r = await Net.api("POST", "/api/chat/send", { text });
         this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.speakOut(r.baye.content); this.scroll();
+        if (r.model?.provider && $("#chat-model-pill")) $("#chat-model-pill").textContent = `${r.model.provider} · ${r.model.model}${r.model.degraded ? " · fallback" : ""}`;
+        if (r.ui_action?.type === "navigate" && r.ui_action.view) setTimeout(() => App.go(r.ui_action.view), 250);
       } catch (e) { toast("sin conexión con BAY-E", true); }
     },
     partial(m) {
@@ -955,7 +969,7 @@ const Views = (() => {
         const providers = (st.providers || []).map((p) => esc(p.name) + " · " + esc(p.model || "")).join(" → ") || "ninguno";
         const html = '<div class="kv"><label>Último proveedor</label><b>' + esc(st.last_provider) + '</b></div>' +
           '<div class="kv"><label>Proveedores</label><b>' + providers + '</b></div>' +
-          '<p class="hint">Configura llama.cpp u Ollama en Ajustes > Cerebro IA. El fallback no finge una respuesta inteligente.</p>';
+          '<p class="hint">OpenAI usa OPENAI_API_KEY desde tu archivo .env. La clave nunca se guarda en BAY-E. llama.cpp y Ollama quedan como fallbacks locales.</p>';
         modal("Cerebro local", html);
       });
       $("#changelog").innerHTML = `
@@ -1010,7 +1024,7 @@ const Views = (() => {
     refresh(s) { this.st = s.settings; if ($("#view-settings").classList.contains("is-active")) this.render(); },
     fields: {
       identity: [["name", "Nombre", "text"], ["species", "Especie", "text"], ["birthday", "Nacimiento", "text"], ["voice", "Voz", "select:cálida · suave,juguetona,serena,guardián,piloto"], ["language", "Idioma", "select:es,ca,en,fr"], ["personality", "Arquetipo", "select:baymax,walle,personalizado"]],
-      ai: [["provider_order", "Orden de proveedores", "text"], ["llama_url", "URL llama.cpp", "text"], ["llama_model", "Modelo llama.cpp", "text"], ["ollama_url", "URL Ollama", "text"], ["ollama_model", "Modelo Ollama", "text"]],
+      ai: [["provider_order", "Orden de proveedores", "text"], ["openai_url", "URL OpenAI", "text"], ["openai_model", "Modelo OpenAI", "text"], ["openai_store", "Permitir almacenamiento remoto", "bool"], ["llama_url", "URL llama.cpp", "text"], ["llama_model", "Modelo llama.cpp", "text"], ["ollama_url", "URL Ollama", "text"], ["ollama_model", "Modelo Ollama", "text"]],
       system: [["demo_mode", "Modo demo sintético", "bool"], ["allow_synthetic_events", "Permitir eventos sintéticos", "bool"]],
       audio: [["tts_enabled", "Voz activada", "bool"], ["wake_word", "Palabra de activación", "text"], ["volume", "Volumen (0-1)", "num"], ["rate", "Velocidad (0.5-2)", "num"]],
       vision: [["camera_enabled", "Cámara activada", "bool"], ["fps", "FPS", "num"], ["detect_people", "Detectar personas", "bool"], ["detect_animals", "Detectar animales", "bool"], ["save_captures", "Guardar capturas", "bool"]],
@@ -1146,6 +1160,12 @@ const Views = (() => {
       else if (el.dataset.k === "mic" || el.dataset.k === "tts") App.go("chat");
       else if (el.dataset.k === "memory") App.go("memory");
     });
+    const sysLine = $("#chat-system-line");
+    if (sysLine) {
+      const hw = s.hardware_connected ? "cuerpo conectado" : "software";
+      const privacy = s.private_mode ? " · privado" : "";
+      sysLine.textContent = `memoria + mundo + seguridad · ${hw}${privacy}`;
+    }
     // caras vivas
     Face.update(App.faceMain, s.expression);
     Face.update(App.faceMini, s.expression);

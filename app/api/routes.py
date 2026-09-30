@@ -54,54 +54,102 @@ def command(payload: dict = Body(...)):
     return ack
 
 
-# ================================================================ chat
+# ================================================================ chat / conversaciones
+@router.get("/chat/threads")
+def chat_threads():
+    return {"threads": db.list_threads()}
+
+
+@router.post("/chat/threads")
+def chat_threads_create(payload: dict = Body(default={})):
+    return {"thread": db.create_thread(payload.get("title", "Nuevo chat"))}
+
+
+@router.put("/chat/threads/{thread_id}")
+def chat_threads_update(thread_id: str, payload: dict = Body(...)):
+    out = db.update_thread(thread_id, title=payload.get("title"), archived=payload.get("archived"))
+    if not out:
+        raise HTTPException(404, "chat no encontrado")
+    return {"thread": out}
+
+
+@router.delete("/chat/threads/{thread_id}")
+def chat_threads_delete(thread_id: str):
+    ok = db.delete_thread(thread_id)
+    if not ok:
+        raise HTTPException(400 if thread_id == "default" else 404, "no se puede borrar este chat")
+    return {"ok": True}
+
+
 @router.get("/chat/history")
-def chat_history(limit: int = Query(200, ge=1, le=1000)):
-    return {"messages": db.list_messages(limit)}
+def chat_history(thread_id: str = "default", limit: int = Query(300, ge=1, le=2000)):
+    return {"messages": db.list_messages(limit, thread_id=thread_id)}
+
+
+@router.put("/chat/messages/{msg_id}")
+def chat_message_update(msg_id: str, payload: dict = Body(...)):
+    msg = db.update_message(msg_id, payload.get("content", ""))
+    if not msg:
+        raise HTTPException(404, "mensaje no encontrado")
+    db.log("info", "chat", "Mensaje editado", f"msg={msg_id}")
+    return {"message": msg}
+
+
+@router.delete("/chat/messages/{msg_id}")
+def chat_message_delete(msg_id: str):
+    ok = db.delete_message(msg_id)
+    if not ok:
+        raise HTTPException(404, "mensaje no encontrado")
+    db.log("sensitive", "chat", "Mensaje borrado", f"msg={msg_id}")
+    return {"ok": True}
 
 
 @router.post("/chat/send")
 async def chat_send(payload: dict = Body(...)):
-    """REST fallback using the same real conversation engine as WebSocket."""
+    """Conversación persistente por hilo usando el cerebro real de BAY-E."""
     text = (payload.get("text") or "").strip()
+    thread_id = (payload.get("thread_id") or "default").strip()
     if not text:
         raise HTTPException(400, "mensaje vacío")
-    msg = db.add_message("user", text)
+    msg = db.add_message("user", text, thread_id=thread_id)
     BAYE.hear(text)
     BAYE.set_activity("thinking", 2.0)
-    reply, emotion, model_reply = await BAYE.generate_reply(text)
-    bmsg = db.add_message("baye", reply, emotion=emotion)
+    history = db.list_messages(120, thread_id=thread_id)
+    reply, emotion, model_reply = await BAYE.generate_reply(text, history=history)
+    bmsg = db.add_message("baye", reply, emotion=emotion, thread_id=thread_id)
     BAYE.set_activity("speaking", max(2.0, len(reply) / 12))
     broadcast_state()
-    return {"user": msg, "baye": bmsg, "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded}}
+    return {
+        "user": msg,
+        "baye": bmsg,
+        "thread": db.get_thread(thread_id),
+        "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded},
+    }
 
 
 @router.post("/chat/flag")
 def chat_flag(payload: dict = Body(...)):
-    """Acciones por mensaje: recordar | olvidar | fijar | repetir | tarea | memoria."""
+    """Acciones por mensaje: recordar, olvidar, fijar, repetir o convertir en tarea."""
     msg_id = payload.get("id")
     action = payload.get("action")
-    msgs = {m["id"]: m for m in db.list_messages(1000)}
+    msgs = {m["id"]: m for m in db.list_messages(3000)}
     m = msgs.get(msg_id)
     if not m:
         raise HTTPException(404, "mensaje no encontrado")
 
-    if action == "remember":                      # convertir en memoria
-        mem = db.add_memory(type="episodic", content=m["content"], source="chat",
-                            confidence=0.85, tags=["del-chat"])
+    if action == "remember":
+        mem = db.add_memory(type="episodic", content=m["content"], source="chat", confidence=0.85, tags=["del-chat"])
         db.set_message_flag(msg_id, "memory", True)
         BAYE.s["last_memory"] = mem["content"]
-        db.log("info", "memory", "Recuerdo guardado desde el chat", f"msg={msg_id}")
         broadcast_state()
         return {"ok": True, "memory": mem}
-    if action == "forget":                        # olvidar: borra la memoria asociada
+    if action == "forget":
         db.set_message_flag(msg_id, "memory", False)
-        # buscamos memorias creadas desde este mensaje exacto
         n = 0
         for mm in db.list_memories(q=m["content"][:40]):
             if mm["source"] == "chat" and mm["content"] == m["content"]:
-                db.delete_memory(mm["id"]); n += 1
-        db.log("sensitive", "memory", f"Olvido solicitado ({n} memorias)", f"msg={msg_id}")
+                db.delete_memory(mm["id"])
+                n += 1
         return {"ok": True, "deleted": n}
     if action == "pin":
         val = not bool(m["fixed"])
@@ -109,14 +157,69 @@ def chat_flag(payload: dict = Body(...)):
         return {"ok": True, "fixed": val}
     if action == "repeat":
         return {"ok": True, "text": m["content"]}
-    if action == "task":                          # convertir en tarea
-        t = db.add_task(title=m["content"][:70], description=f"Originada del mensaje {msg_id}",
-                        scheduled_at=0, repeat="", room="")
-        db.log("info", "tasks", "Tarea creada desde el chat", f"msg={msg_id}")
+    if action == "task":
+        t = db.add_task(title=m["content"][:70], description=f"Originada del mensaje {msg_id}")
         return {"ok": True, "task": t}
-    if action == "memory":                        # alias semántico de remember
+    if action == "memory":
         return chat_flag({"id": msg_id, "action": "remember"})
     raise HTTPException(400, f"acción desconocida: {action}")
+
+
+# ================================================================ corazón / mente editable
+@router.get("/mind/rules")
+def mind_rules(kind: str = "", enabled_only: bool = False):
+    return {"rules": db.list_mind_rules(kind=kind, enabled_only=enabled_only)}
+
+
+@router.post("/mind/rules")
+def mind_rules_create(payload: dict = Body(...)):
+    content = (payload.get("content") or "").strip()
+    if not content:
+        raise HTTPException(400, "contenido vacío")
+    rule = db.add_mind_rule(
+        payload.get("kind", "note"),
+        content,
+        priority=int(payload.get("priority", 50)),
+        enabled=bool(payload.get("enabled", True)),
+    )
+    BUS.publish("mind.rule_created", rule, source="user")
+    return {"rule": rule}
+
+
+@router.put("/mind/rules/{rule_id}")
+def mind_rules_update(rule_id: str, payload: dict = Body(...)):
+    rule = db.update_mind_rule(rule_id, **payload)
+    if not rule:
+        raise HTTPException(404, "regla no encontrada")
+    BUS.publish("mind.rule_updated", rule, source="user")
+    return {"rule": rule}
+
+
+@router.delete("/mind/rules/{rule_id}")
+def mind_rules_delete(rule_id: str):
+    ok = db.delete_mind_rule(rule_id)
+    if not ok:
+        raise HTTPException(404, "regla no encontrada")
+    BUS.publish("mind.rule_deleted", {"id": rule_id}, source="user")
+    return {"ok": True}
+
+
+@router.get("/mind/state")
+def mind_state():
+    s = BAYE.snapshot()
+    return {
+        "emotion": s.get("expression", {}).get("emotion"),
+        "emotions": s.get("emotions", {}),
+        "mode": s.get("mode"),
+        "activity": s.get("activity"),
+        "objective": s.get("current_task"),
+        "last_thought": s.get("last_thought"),
+        "next_decision": s.get("next_decision"),
+        "reason": s.get("reason"),
+        "learning": s.get("learning"),
+        "doubt": s.get("doubt"),
+        "rules": db.list_mind_rules(enabled_only=True),
+    }
 
 
 # ================================================================ memoria CRUD
@@ -607,3 +710,52 @@ def privacy_enforce_retention():
     result = enforce_retention(days)
     broadcast_state()
     return {"ok": True, **result}
+
+# ================================================================ nodos móviles
+@router.get("/mobile/nodes")
+def mobile_nodes():
+    return {"nodes": db.list_mobile_nodes()}
+
+
+@router.post("/mobile/heartbeat")
+def mobile_heartbeat(payload: dict = Body(...)):
+    node_id = (payload.get("id") or "").strip()
+    if not node_id:
+        raise HTTPException(400, "id de dispositivo requerido")
+    capabilities = payload.get("capabilities") or {}
+    telemetry = payload.get("telemetry") or {}
+    node = db.upsert_mobile_node(
+        node_id,
+        name=(payload.get("name") or "Teléfono BAY-E")[:80],
+        platform=(payload.get("platform") or "android")[:30],
+        capabilities=capabilities,
+        telemetry=telemetry,
+    )
+    if capabilities.get("camera"):
+        BAYE.s["sensors"]["camera"] = True
+    if capabilities.get("microphone"):
+        BAYE.s["sensors"]["mic"] = True
+    BUS.publish("mobile.heartbeat", {"id": node_id, "telemetry": telemetry}, source="mobile")
+    return {"ok": True, "node": node, "core": {"version": APP_VERSION, "private_mode": BAYE.s["private_mode"]}}
+
+
+@router.post("/mobile/vision")
+async def mobile_vision(node_id: str = Form(...), frame: UploadFile = File(...)):
+    """Usa la cámara del teléfono como ojo remoto de BAY-E."""
+    if BAYE.s["private_mode"]:
+        raise HTTPException(403, "modo privado activo")
+    raw = await frame.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "fotograma demasiado grande")
+    try:
+        observation = VISION.observe_jpeg(raw)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    for det in observation.get("detections", []):
+        det["source_node"] = node_id
+        BAYE.perceive_vision(det)
+    BUS.publish("mobile.vision", {"id": node_id, "detections": len(observation.get("detections", []))}, source="mobile")
+    broadcast_state()
+    return observation

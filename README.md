@@ -67,6 +67,54 @@ Never place an API key in browser JavaScript or commit it to Git. Copy
 
 See [docs/SETUP.md](docs/SETUP.md) for local AI, camera, voice and ROS 2 setup.
 
+## Chat as heart and mind
+
+The local page is now the primary control surface. It supports multiple chats,
+renaming/deleting chats, editing/deleting/copying/reading messages, saving a
+message as memory, converting messages into tasks, and an editable Mind panel.
+
+Mind entries are structured as restrictions, principles, goals, confirmed
+beliefs and notes. They are injected into BAY-E's conversational context. They
+do not expose or edit hidden chain-of-thought.
+
+## BAY-E Mobile
+
+The `mobile/` app is a Capacitor Android client for the same BAY-E Core. It
+can provide, with permission:
+
+- microphone / speech recognition
+- camera frames for the real vision pipeline
+- battery state
+- network status
+- accelerometer/motion telemetry
+- one-shot geolocation when the user explicitly taps the location button
+- haptic feedback
+
+The phone does **not** create a second personality or memory database. It
+connects to the same local Core.
+
+To expose the Core to the phone on your LAN, set:
+
+```env
+BAYE_HOST=0.0.0.0
+```
+
+Then enter the computer's LAN address in the Android app, for example
+`http://192.168.1.20:8300`.
+
+Build the mobile app:
+
+```bash
+cd mobile
+npm install
+npm run build
+npx cap add android
+npx cap sync android
+npx cap open android
+```
+
+Capacitor 8 requires Node 22+ for development.
+
 ## Architecture
 
 ```

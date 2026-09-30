@@ -665,7 +665,7 @@ class BayeBrain:
         except Exception:
             pass
 
-    async def generate_reply(self, text: str):
+    async def generate_reply(self, text: str, history: Optional[list[dict]] = None):
         """Generate a reply and execute safe chat-native robot functions."""
         t = (text or "").strip().lower()
 
@@ -744,7 +744,7 @@ class BayeBrain:
         model_reply, created_memory = await conversation_respond(
             text,
             state=self.snapshot(),
-            history=db.list_messages(80),
+            history=history if history is not None else db.list_messages(80),
         )
         self.s["model_provider"] = model_reply.provider
         if created_memory:

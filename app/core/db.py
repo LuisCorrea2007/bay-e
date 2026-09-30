@@ -149,6 +149,33 @@ CREATE TABLE IF NOT EXISTS face_profiles (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS chat_threads (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS mind_rules (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 50,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mobile_nodes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'android',
+    last_seen REAL NOT NULL,
+    capabilities TEXT NOT NULL DEFAULT '{}',
+    telemetry TEXT NOT NULL DEFAULT '{}'
+);
 """
 
 
@@ -161,12 +188,38 @@ def _conn() -> sqlite3.Connection:
 _INIT_DB_DONE = False
 
 
+def _column_names(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(r["name"]) for r in conn.execute("PRAGMA table_info(" + table + ")").fetchall()}
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Migraciones aditivas para bases locales existentes."""
+    cols = _column_names(conn, "messages")
+    if "thread_id" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN thread_id TEXT NOT NULL DEFAULT 'default'")
+    if "updated_at" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN updated_at REAL NOT NULL DEFAULT 0")
+        conn.execute("UPDATE messages SET updated_at=created_at WHERE updated_at=0")
+    if "deleted" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+
+    now = time.time()
+    conn.execute(
+        "INSERT OR IGNORE INTO chat_threads (id,title,created_at,updated_at,archived) VALUES ('default','BAY-E',?,?,0)",
+        (now, now),
+    )
+    row = conn.execute("SELECT MAX(created_at) AS ts FROM messages WHERE thread_id='default'").fetchone()
+    if row and row["ts"]:
+        conn.execute("UPDATE chat_threads SET updated_at=? WHERE id='default'", (float(row["ts"]),))
+
+
 def init_db() -> None:
     """Crea esquema + siembra datos iniciales la primera vez."""
     global _INIT_DB_DONE
     with _LOCK:
         conn = _conn()
         conn.executescript(SCHEMA)
+        _migrate_schema(conn)
         conn.commit()
         first = conn.execute("SELECT COUNT(*) c FROM memories").fetchone()["c"] == 0
         conn.close()
@@ -336,35 +389,298 @@ def import_memories(items: list[dict]) -> int:
     return n
 
 
-# ----------------------------------------------------------------- mensajes
-def add_message(role: str, content: str, emotion: str = "") -> dict:
-    mid = "msg_" + uuid.uuid4().hex[:10]
+# ----------------------------------------------------------------- conversaciones / mensajes
+def create_thread(title: str = "Nuevo chat") -> dict:
+    tid = "chat_" + uuid.uuid4().hex[:10]
+    now = time.time()
+    title = (title or "Nuevo chat").strip()[:120]
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO chat_threads (id,title,created_at,updated_at,archived) VALUES (?,?,?,?,0)",
+            (tid, title, now, now),
+        )
+        conn.commit()
+        conn.close()
+    return {"id": tid, "title": title, "created_at": now, "updated_at": now, "archived": False}
+
+
+def list_threads(include_archived: bool = False) -> list[dict]:
+    sql = "SELECT * FROM chat_threads"
+    if not include_archived:
+        sql += " WHERE archived=0"
+    sql += " ORDER BY updated_at DESC"
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql).fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["archived"] = bool(d["archived"])
+        out.append(d)
+    return out
+
+
+def get_thread(thread_id: str) -> Optional[dict]:
+    with _LOCK:
+        conn = _conn()
+        r = conn.execute("SELECT * FROM chat_threads WHERE id=?", (thread_id,)).fetchone()
+        conn.close()
+    if not r:
+        return None
+    d = dict(r)
+    d["archived"] = bool(d["archived"])
+    return d
+
+
+def update_thread(thread_id: str, *, title: Optional[str] = None, archived: Optional[bool] = None) -> Optional[dict]:
+    sets, args = [], []
+    if title is not None:
+        sets.append("title=?")
+        args.append((title or "Nuevo chat").strip()[:120])
+    if archived is not None:
+        sets.append("archived=?")
+        args.append(1 if archived else 0)
+    if not sets:
+        return get_thread(thread_id)
+    sets.append("updated_at=?")
+    args.append(time.time())
+    args.append(thread_id)
+    with _LOCK:
+        conn = _conn()
+        conn.execute("UPDATE chat_threads SET " + ",".join(sets) + " WHERE id=?", args)
+        conn.commit()
+        conn.close()
+    return get_thread(thread_id)
+
+
+def delete_thread(thread_id: str) -> bool:
+    if thread_id == "default":
+        return False
+    with _LOCK:
+        conn = _conn()
+        conn.execute("DELETE FROM messages WHERE thread_id=?", (thread_id,))
+        n = conn.execute("DELETE FROM chat_threads WHERE id=?", (thread_id,)).rowcount
+        conn.commit()
+        conn.close()
+    return n > 0
+
+
+def _touch_thread(thread_id: str, preview: str = "") -> None:
     now = time.time()
     with _LOCK:
         conn = _conn()
-        conn.execute("INSERT INTO messages (id,role,content,created_at,emotion,is_memory,fixed) VALUES (?,?,?,?,?,0,0)",
-                     (mid, role, content, now, emotion))
+        row = conn.execute("SELECT id,title FROM chat_threads WHERE id=?", (thread_id,)).fetchone()
+        if not row:
+            title = preview.strip().replace("\n", " ")[:48] or "Nuevo chat"
+            conn.execute(
+                "INSERT INTO chat_threads (id,title,created_at,updated_at,archived) VALUES (?,?,?,?,0)",
+                (thread_id, title, now, now),
+            )
+        else:
+            if row["title"] == "Nuevo chat" and preview.strip():
+                title = preview.strip().replace("\n", " ")[:48]
+                conn.execute("UPDATE chat_threads SET title=?,updated_at=? WHERE id=?", (title, now, thread_id))
+            else:
+                conn.execute("UPDATE chat_threads SET updated_at=? WHERE id=?", (now, thread_id))
         conn.commit()
         conn.close()
-    return {"id": mid, "role": role, "content": content, "created_at": now,
-            "emotion": emotion, "is_memory": False, "fixed": False}
 
 
-def list_messages(limit: int = 200) -> list[dict]:
+def add_message(role: str, content: str, emotion: str = "", thread_id: str = "default") -> dict:
+    mid = "msg_" + uuid.uuid4().hex[:10]
+    now = time.time()
+    thread_id = thread_id or "default"
+    _touch_thread(thread_id, content if role == "user" else "")
     with _LOCK:
         conn = _conn()
-        rows = conn.execute("SELECT * FROM messages ORDER BY created_at ASC LIMIT ?", (limit,)).fetchall()
+        conn.execute(
+            "INSERT INTO messages (id,role,content,created_at,emotion,is_memory,fixed,thread_id,updated_at,deleted) "
+            "VALUES (?,?,?,?,?,0,0,?,?,0)",
+            (mid, role, content, now, emotion, thread_id, now),
+        )
+        conn.commit()
         conn.close()
-    return [dict(r) for r in rows]
+    return {
+        "id": mid, "role": role, "content": content, "created_at": now, "updated_at": now,
+        "emotion": emotion, "is_memory": False, "fixed": False, "thread_id": thread_id, "deleted": False
+    }
+
+
+def list_messages(limit: int = 200, thread_id: str = "") -> list[dict]:
+    sql = "SELECT * FROM messages WHERE deleted=0"
+    args = []
+    if thread_id:
+        sql += " AND thread_id=?"
+        args.append(thread_id)
+    sql += " ORDER BY created_at ASC LIMIT ?"
+    args.append(limit)
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["is_memory"] = bool(d.get("is_memory"))
+        d["fixed"] = bool(d.get("fixed"))
+        d["deleted"] = bool(d.get("deleted"))
+        out.append(d)
+    return out
+
+
+def update_message(msg_id: str, content: str) -> Optional[dict]:
+    content = (content or "").strip()
+    if not content:
+        return None
+    with _LOCK:
+        conn = _conn()
+        conn.execute("UPDATE messages SET content=?,updated_at=? WHERE id=? AND deleted=0", (content, time.time(), msg_id))
+        conn.commit()
+        r = conn.execute("SELECT * FROM messages WHERE id=? AND deleted=0", (msg_id,)).fetchone()
+        conn.close()
+    return dict(r) if r else None
+
+
+def delete_message(msg_id: str) -> bool:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("UPDATE messages SET deleted=1,updated_at=? WHERE id=?", (time.time(), msg_id)).rowcount
+        conn.commit()
+        conn.close()
+    return n > 0
 
 
 def set_message_flag(msg_id: str, field: str, value: bool) -> None:
     col = {"memory": "is_memory", "fixed": "fixed"}.get(field, "fixed")
     with _LOCK:
         conn = _conn()
-        conn.execute(f"UPDATE messages SET {col}=? WHERE id=?", (1 if value else 0, msg_id))
+        conn.execute("UPDATE messages SET " + col + "=?,updated_at=? WHERE id=?", (1 if value else 0, time.time(), msg_id))
         conn.commit()
         conn.close()
+
+
+# ----------------------------------------------------------------- mente editable
+MIND_KINDS = {"restriction", "principle", "goal", "belief", "note"}
+
+
+def add_mind_rule(kind: str, content: str, *, priority: int = 50, enabled: bool = True) -> dict:
+    kind = kind if kind in MIND_KINDS else "note"
+    rid = "rule_" + uuid.uuid4().hex[:10]
+    now = time.time()
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO mind_rules (id,kind,content,enabled,priority,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+            (rid, kind, content.strip(), 1 if enabled else 0, max(0, min(100, int(priority))), now, now),
+        )
+        conn.commit()
+        r = conn.execute("SELECT * FROM mind_rules WHERE id=?", (rid,)).fetchone()
+        conn.close()
+    d = dict(r)
+    d["enabled"] = bool(d["enabled"])
+    return d
+
+
+def list_mind_rules(kind: str = "", enabled_only: bool = False) -> list[dict]:
+    sql = "SELECT * FROM mind_rules WHERE 1=1"
+    args = []
+    if kind:
+        sql += " AND kind=?"
+        args.append(kind)
+    if enabled_only:
+        sql += " AND enabled=1"
+    sql += " ORDER BY priority DESC, updated_at DESC"
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["enabled"] = bool(d["enabled"])
+        out.append(d)
+    return out
+
+
+def update_mind_rule(rule_id: str, **fields: Any) -> Optional[dict]:
+    sets, args = [], []
+    if "kind" in fields:
+        kind = fields["kind"] if fields["kind"] in MIND_KINDS else "note"
+        sets.append("kind=?")
+        args.append(kind)
+    if "content" in fields:
+        sets.append("content=?")
+        args.append(str(fields["content"]).strip())
+    if "enabled" in fields:
+        sets.append("enabled=?")
+        args.append(1 if fields["enabled"] else 0)
+    if "priority" in fields:
+        sets.append("priority=?")
+        args.append(max(0, min(100, int(fields["priority"]))))
+    if not sets:
+        return None
+    sets.append("updated_at=?")
+    args.append(time.time())
+    args.append(rule_id)
+    with _LOCK:
+        conn = _conn()
+        conn.execute("UPDATE mind_rules SET " + ",".join(sets) + " WHERE id=?", args)
+        conn.commit()
+        r = conn.execute("SELECT * FROM mind_rules WHERE id=?", (rule_id,)).fetchone()
+        conn.close()
+    if not r:
+        return None
+    d = dict(r)
+    d["enabled"] = bool(d["enabled"])
+    return d
+
+
+def delete_mind_rule(rule_id: str) -> bool:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM mind_rules WHERE id=?", (rule_id,)).rowcount
+        conn.commit()
+        conn.close()
+    return n > 0
+
+
+# ----------------------------------------------------------------- nodos móviles
+def upsert_mobile_node(node_id: str, *, name: str, platform: str = "android",
+                       capabilities: Optional[dict] = None, telemetry: Optional[dict] = None) -> dict:
+    now = time.time()
+    capabilities = capabilities or {}
+    telemetry = telemetry or {}
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO mobile_nodes (id,name,platform,last_seen,capabilities,telemetry) VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name,platform=excluded.platform,last_seen=excluded.last_seen,"
+            "capabilities=excluded.capabilities,telemetry=excluded.telemetry",
+            (node_id, name, platform, now, json.dumps(capabilities), json.dumps(telemetry)),
+        )
+        conn.commit()
+        r = conn.execute("SELECT * FROM mobile_nodes WHERE id=?", (node_id,)).fetchone()
+        conn.close()
+    d = dict(r)
+    d["capabilities"] = json.loads(d["capabilities"] or "{}")
+    d["telemetry"] = json.loads(d["telemetry"] or "{}")
+    return d
+
+
+def list_mobile_nodes() -> list[dict]:
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute("SELECT * FROM mobile_nodes ORDER BY last_seen DESC").fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["capabilities"] = json.loads(d["capabilities"] or "{}")
+        d["telemetry"] = json.loads(d["telemetry"] or "{}")
+        out.append(d)
+    return out
 
 
 # ----------------------------------------------------------------- tareas

@@ -9,6 +9,7 @@ class SafetyGovernorTests(unittest.TestCase):
             "modules": [{"id": "motors", "enabled": False}],
             "settings": {"hardware": {"ros2_bridge": False}},
             "security": {"status": "ok"},
+            "hardware_connected": False,
             "private_mode": False,
             "sensors": {"camera": True},
         }
@@ -23,10 +24,19 @@ class SafetyGovernorTests(unittest.TestCase):
         self.assertFalse(d.allowed)
         self.assertEqual(d.code, "hardware_unavailable")
 
+    def test_missing_heartbeat_blocks_motion(self):
+        s = self._state()
+        s["modules"][0]["enabled"] = True
+        s["settings"]["hardware"]["ros2_bridge"] = True
+        d = SAFETY.evaluate_motion("forward", s)
+        self.assertFalse(d.allowed)
+        self.assertEqual(d.code, "hardware_heartbeat_missing")
+
     def test_motion_with_hardware_can_be_allowed(self):
         s = self._state()
         s["modules"][0]["enabled"] = True
         s["settings"]["hardware"]["ros2_bridge"] = True
+        s["hardware_connected"] = True
         d = SAFETY.evaluate_motion("forward", s)
         self.assertTrue(d.allowed)
 

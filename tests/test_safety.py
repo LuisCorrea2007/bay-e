@@ -32,6 +32,22 @@ class SafetyGovernorTests(unittest.TestCase):
         self.assertFalse(d.allowed)
         self.assertEqual(d.code, "hardware_heartbeat_missing")
 
+    def test_software_estop_blocks_motion(self):
+        s = self._state()
+        s["modules"][0]["enabled"] = True
+        s["settings"]["hardware"]["ros2_bridge"] = True
+        s["hardware_connected"] = True
+        s["software_estop"] = True
+        d = SAFETY.evaluate_motion("forward", s)
+        self.assertFalse(d.allowed)
+        self.assertEqual(d.code, "emergency_stop")
+
+    def test_manipulation_requires_live_body(self):
+        s = self._state()
+        d = SAFETY.evaluate_manipulation("left", s)
+        self.assertFalse(d.allowed)
+        self.assertEqual(d.code, "hardware_heartbeat_missing")
+
     def test_motion_with_hardware_can_be_allowed(self):
         s = self._state()
         s["modules"][0]["enabled"] = True

@@ -19,6 +19,8 @@ from fastapi import WebSocket
 
 from .brain import BAYE
 from .config import HEARTBEAT_INTERVAL
+from .events import BUS
+from .guardian import GUARDIAN
 from . import db
 
 # ----------------------------------------------------------------- clientes
@@ -40,6 +42,10 @@ def broadcast_state() -> None:
 
 
 BAYE.broadcast = lambda snap: _emit(snap)  # gancho usado por brain.publish_now
+
+# Todos los eventos internos pueden observarse desde la consola sin acoplar
+# los productores al WebSocket.
+BUS.subscribe("*", lambda event: _emit({"type": "core_event", "event": event.to_dict()}))
 
 
 async def ws_handler(websocket: WebSocket) -> None:
@@ -91,20 +97,19 @@ def handle_client_msg(msg: dict, emit) -> None:
 
 # ----------------------------------------------------------------- visión simulada
 DETECTIONS = [
-    {"label": "Ana", "kind": "person", "confidence": 0.94},
-    {"label": "Carlos", "kind": "person", "confidence": 0.81},
-    {"label": "Mini (gato)", "kind": "animal", "confidence": 0.88},
+    {"label": "persona", "kind": "person", "confidence": 0.82},
+    {"label": "gato", "kind": "animal", "confidence": 0.78},
     {"label": "taza", "kind": "object", "confidence": 0.76},
-    {"label": "sofá", "kind": "object", "confidence": 0.95},
-    {"label": "pelota roja", "kind": "object", "confidence": 0.58},
-    {"label": "movimiento leve", "kind": "motion", "confidence": 0.42},
-    {"label": "ventana abierta", "kind": "scene", "confidence": 0.67},
-    {"label": "desconocido", "kind": "object", "confidence": 0.31},
+    {"label": "sofá", "kind": "object", "confidence": 0.88},
+    {"label": "movimiento", "kind": "motion", "confidence": 0.55},
+    {"label": "objeto desconocido", "kind": "object", "confidence": 0.31},
 ]
 
 
 def vision_tick() -> None:
     """Simula una detección visual (se sustituye por el módulo real de visión)."""
+    if not BAYE.s.get("demo_mode", False):
+        return
     cam_on = BAYE.s["sensors"]["camera"] and any(m["id"] == "vision" and m["enabled"] for m in BAYE.s["modules"])
     if not cam_on or BAYE.s["private_mode"]:
         return
@@ -126,9 +131,12 @@ async def life_loop() -> None:
         await asyncio.sleep(HEARTBEAT_INTERVAL)
         try:
             await BAYE.heartbeat()
+            GUARDIAN.report("brain", "ok", "heartbeat")
             tick += 1
             if tick % 2 == 0:              # ~ cada 3 s una detección potencial
                 vision_tick()
             broadcast_state()
         except Exception as e:             # nunca dejar morir el corazón
+            GUARDIAN.report("brain", "degraded", repr(e))
+            BUS.publish("guardian.module_degraded", {"module": "brain", "error": repr(e)}, source="guardian")
             db.log("error", "core", "Latido interrumpido (se recupera)", repr(e))

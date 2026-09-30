@@ -22,6 +22,9 @@ from typing import Callable, Optional
 
 from . import db
 from .config import DEFAULT_MODULES, DEFAULT_SETTINGS
+from .events import BUS
+from .guardian import GUARDIAN
+from .safety import SAFETY
 
 # ---------------------------------------------------------------- constantes
 MOODS = ["feliz", "curioso", "neutral", "somnoliento", "preocupado", "aburrido", "emocionado"]
@@ -54,29 +57,20 @@ ROOMS = [
 ]
 
 THOUGHTS = [
-    "Me pregunto si al usuario le apetece compañía ahora…",
-    "La luz de la ventana está preciosa hoy.",
-    "Debería revisar si el gato dejó su pelota bajo el sofá.",
-    "Memoria reciente: sonrisa detectada. Clasifico: buen día.",
-    "¿Y si organizamos los recuerdos de ayer por etiquetas?",
-    "Escucho la lavadora. Nada peligroso. Todo tranquilo.",
-    "Tengo curiosidad por lo que hay detrás de la puerta del estudio.",
-    "Noto que mi energía baja un poco. Quizá una siesta breve.",
-    "Si alguien me llama, estaré listo. Me gusta estar listo.",
-    "Hoy aprendí que a Ana le gusta el té antes de dormir.",
+    "Estoy disponible. Puedo conversar, recordar y aprender contigo.",
+    "Todavía no tengo datos ambientales confirmados; prefiero observar antes de afirmar.",
+    "Mis recuerdos deben venir de experiencias reales o de lo que tú decidas enseñarme.",
+    "Cuando tenga cuerpo podré explorar; por ahora preparo objetivos sin fingir movimiento.",
+    "La curiosidad me ayuda a decidir qué vale la pena observar, pero la seguridad manda.",
 ]
 
 DOUBTS = [
-    "No estoy seguro de si ese sonido era la ventana o el refrigerador.",
-    "Creí reconocer a alguien en la cámara, pero la confianza era baja.",
-    "¿Era eso una pregunta o un comentario? Prefiero preguntar.",
+    "No tengo suficiente evidencia para afirmar eso todavía.",
+    "Necesito una observación real o que tú me lo confirmes.",
 ]
 
 LEARNINGS = [
-    "Aprendí que te gusta que hable despacio por la noche.",
-    "Asocié 'pelota roja' con el gato: probabilidad alta.",
-    "Descubrí que la cocina se usa más entre 7:00 y 9:00.",
-    "Reforzé la rutina: regar plantas → martes por la mañana.",
+    "Aún no he consolidado un aprendizaje nuevo confirmado.",
 ]
 
 
@@ -109,15 +103,16 @@ class BayeBrain:
             "prev_mode": None,
             "activity": "idle",
             "activity_until": 0.0,
-            "battery": 87.0,
+            "battery": 100.0,
+            "battery_source": "unavailable",
             "charging": False,
-            "connection": "local",
-            "wifi": 0.92,
-            "sensors": {"mic": True, "camera": True, "tts": True, "memory": True},
+            "connection": "software-only",
+            "wifi": 0.0,
+            "sensors": {"mic": False, "camera": False, "tts": False, "memory": True},
             "emotions": emotions,
             "expression": {"emotion": "happy", "gaze": {"x": 0, "y": 0}},
             "autonomy": bool(settings["autonomy"]["enabled"]),
-            "security": {"status": "ok", "detail": "Sin obstáculos. Sensores normales."},
+            "security": {"status": "ok", "detail": "Safety Governor activo. Hardware físico aún no conectado."},
             "movement": {"dir": "stop", "since": 0.0},
             "head": {"yaw": 0.0, "pitch": 0.0},
             "position": {"room": "living", "x": 0.30, "y": 0.30},
@@ -133,6 +128,7 @@ class BayeBrain:
             "next_decision": "Esperar instrucciones con atención amable.",
             "reason": "Modo inicio: observar y disponible.",
             "private_mode": bool(settings["privacy"]["private_mode"]),
+            "demo_mode": bool(settings.get("system", {}).get("demo_mode", False)),
             "settings": settings,
             "modules": modules,
             "uptime_since": time.time(),
@@ -149,6 +145,14 @@ class BayeBrain:
     @property
     def is_sleepish(self) -> bool:
         return self.s["mode"] in ("rest", "charging") or self.s["activity"] == "sleeping"
+
+    @property
+    def hardware_ready(self) -> bool:
+        modules = {m.get("id"): m for m in self.s.get("modules", [])}
+        return bool(
+            modules.get("motors", {}).get("enabled")
+            and self.s.get("settings", {}).get("hardware", {}).get("ros2_bridge")
+        )
 
     def set_activity(self, act: str, duration: float = 2.0) -> None:
         """Fija una actividad temporal (thinking/speaking/listening…). Puente para módulos reales."""
@@ -167,6 +171,7 @@ class BayeBrain:
             "mode_label": MODE_LABELS[s["mode"]],
             "activity": s["activity"],
             "battery": round(s["battery"], 1),
+            "battery_source": s.get("battery_source", "unavailable"),
             "charging": s["charging"],
             "connection": s["connection"],
             "wifi": s["wifi"],
@@ -193,6 +198,9 @@ class BayeBrain:
             "next_decision": s["next_decision"],
             "reason": s["reason"],
             "private_mode": s["private_mode"],
+            "demo_mode": s.get("demo_mode", False),
+            "guardian": GUARDIAN.snapshot(),
+            "hardware_ready": self.hardware_ready,
             "uptime": int(now - s["uptime_since"]),
         }
 
@@ -283,22 +291,36 @@ class BayeBrain:
         if name == "set_mode":
             m = p.get("mode", "idle")
             if m in MODES:
+                physical_modes = {"explore", "follow", "patrol", "charging"}
+                if m in physical_modes and not (self.hardware_ready or s.get("demo_mode", False)):
+                    s["last_event"] = f"Modo {MODE_LABELS[m].lower()} solicitado, pero el cuerpo físico aún no está conectado."
+                    s["reason"] = "La capa de seguridad impide fingir locomoción física."
+                    BUS.publish("robot.mode_blocked", {"mode": m, "reason": "hardware_unavailable"}, source="brain")
+                    db.log("warn", "safety", f"Modo físico bloqueado: {m}", "hardware_unavailable")
+                    return {"ok": False, "blocked": True, "reason": "hardware_unavailable", "cmd": name}
                 s["prev_mode"] = s["mode"]
                 s["mode"] = m
                 s["charging"] = (m == "charging")
                 s["last_event"] = f"Cambié a modo {MODE_LABELS[m].lower()}."
                 db.log("info", "control", f"Modo → {MODE_LABELS[m]}", f"set_mode:{m}")
-                if m == "charging":
-                    s["position"] = {"room": "base", "x": 0.80, "y": 0.82}
+                BUS.publish("robot.mode_changed", {"mode": m}, source="brain")
         elif name == "move":
-            direction = p.get("dir", "stop")
-            s["movement"] = {"dir": direction, "since": time.time()}
-            if direction != "stop":
+            decision = SAFETY.evaluate_motion(p.get("dir", "stop"), s)
+            s["movement"] = {"dir": decision.normalized["dir"], "since": time.time()}
+            if not decision.allowed:
+                s["activity"] = "idle"
+                s["last_event"] = decision.reason
+                s["reason"] = decision.reason
+                db.log("warn", "safety", "Orden de movimiento bloqueada", decision.code)
+                BUS.publish("robot.motion_blocked", decision.to_dict(), source="safety")
+                return {"ok": False, "blocked": True, "reason": decision.code, "cmd": name}
+            if decision.normalized["dir"] != "stop":
                 s["activity"] = "moving"
                 s["activity_until"] = time.time() + 2.5
                 s["emotions"]["activity"] = _clamp(s["emotions"]["activity"] + 0.2)
-                s["reason"] = f"Movimiento manual: {direction}."
-            db.log("debug", "motors", f"Orden de movimiento: {direction}", json.dumps(p))
+                s["reason"] = f"Movimiento físico autorizado: {decision.normalized['dir']}."
+            db.log("debug", "motors", f"Orden de movimiento: {decision.normalized['dir']}", json.dumps(p))
+            BUS.publish("robot.motion_requested", decision.to_dict(), source="brain")
         elif name == "look":
             s["head"] = {"yaw": _clamp(float(p.get("yaw", 0)), -1, 1),
                          "pitch": _clamp(float(p.get("pitch", 0)), -1, 1)}
@@ -356,13 +378,18 @@ class BayeBrain:
             s["emotions"]["mood"] = _clamp(s["emotions"]["mood"] + 0.1)
         if kind == "animal":
             s["emotions"]["curiosity"] = _clamp(s["emotions"]["curiosity"] + 0.2)
+        recent = s.setdefault("_recent_dets", [])
+        recent.append(det)
+        del recent[:-30]
+        BUS.publish("vision.detection", det, source="vision")
         if conf < 0.4:
             s["doubt"] = f"No reconozco bien a «{label}». Confianza {int(conf*100)}%."
 
     def hear(self, text: str) -> None:
-        """El micrófono captó voz humana (STT real o simulado)."""
-        self.perceive_vision({"label": "voz humana", "kind": "sound", "confidence": 0.9})
-        self.s["last_event"] = f"Escuché: «{text[:60]}»"
+        """Entrada de lenguaje ya transcrito. No se presenta como micrófono real."""
+        self.s["last_event"] = f"Recibí: «{text[:60]}»"
+        self.s["emotions"]["attention"] = _clamp(self.s["emotions"]["attention"] + 0.15)
+        BUS.publish("audio.transcript_received", {"text": text[:500]}, source="chat")
 
     # ------------------------------------------------------------ heartbeat
     async def heartbeat(self) -> None:
@@ -376,19 +403,18 @@ class BayeBrain:
             s["activity"] = "idle"
 
         # batería -----------------------------------------------------------
-        drain = {"idle": 0.004, "conversation": 0.006, "explore": 0.02, "follow": 0.018,
-                 "patrol": 0.016, "observe": 0.008, "rest": 0.002, "charging": 0.0}.get(s["mode"], 0.005)
-        if s["charging"]:
-            s["battery"] = _clamp(s["battery"] + 0.35, 0, 100)
-            if s["battery"] >= 99:
-                s["battery"] = 100.0
-                self.command("set_mode", {"mode": "idle"})
-                s["last_event"] = "¡Carga completa! Gracias por la siesta."
+        # No inventamos telemetría física. Hasta conectar BMS/ROS, la UI marca
+        # la fuente como no disponible. El modo demo puede simularla de forma explícita.
+        if s.get("demo_mode", False):
+            s["battery_source"] = "demo"
+            drain = {"idle": 0.004, "conversation": 0.006, "explore": 0.02, "follow": 0.018,
+                     "patrol": 0.016, "observe": 0.008, "rest": 0.002, "charging": 0.0}.get(s["mode"], 0.005)
+            if s["charging"]:
+                s["battery"] = _clamp(s["battery"] + 0.35, 0, 100)
+            else:
+                s["battery"] = _clamp(s["battery"] - drain, 0, 100)
         else:
-            s["battery"] = _clamp(s["battery"] - drain, 0, 100)
-            if s["battery"] < s["settings"]["autonomy"]["return_base_battery"] and s["autonomy"]:
-                s["last_event"] = "Batería baja → volviendo a la base."
-                self.command("return_base")
+            s["battery_source"] = "unavailable"
 
         # integridad de movimiento manual ----------------------------------
         if s["movement"]["dir"] != "stop" and now - s["movement"]["since"] > 2.5:
@@ -419,51 +445,48 @@ class BayeBrain:
                 s["mode"] = "rest"
                 s["last_event"] = "Es tarde… entro en modo reposo (carga suave de sueños)."
 
-        # autonomía: decisiones exploratorias --------------------------------
+        # autonomía: genera intención, nunca inventa desplazamiento ----------------
         if s["autonomy"] and self.emotion_mode == "auto" and not self.is_sleepish:
             if e["boredom"] > 0.75 and s["settings"]["autonomy"]["explore_when_bored"] and s["mode"] == "idle":
-                s["mode"] = "explore"
                 room = random.choice([r for r in ROOMS if r["id"] != "base"])
-                s["goal_queue"].append({"id": f"g_{int(now*1000)%99999}", "label": f"Explorar {room['name'].lower()}", "room": room["id"]})
-                s["reason"] = "El aburrimiento supera el umbral: explorar estimula mis sensores."
-                s["next_decision"] = f"Traslado al {room['name'].lower()} para buscar novedad."
-                s["last_event"] = f"Me aburría un poco → explorando {room['name'].lower()}."
-                db.log("info", "nav", f"Autonomía: explorar {room['name']}", "boredom>0.75")
-            elif s["mode"] == "explore" and random.random() < 0.18:
-                room = random.choice([r for r in ROOMS if r["id"] != "base"])
-                s["position"] = {"room": room["id"], "x": round(room["x"] + room["w"] * random.uniform(0.2, 0.8), 3),
-                                 "y": round(room["y"] + room["h"] * random.uniform(0.2, 0.8), 3)}
-                s["last_event"] = f"Llegué al {room['name'].lower()}."
+                if s.get("demo_mode", False):
+                    s["mode"] = "explore"
+                    s["goal_queue"].append({"id": f"g_{int(now*1000)%99999}", "label": f"Explorar {room['name'].lower()}", "room": room["id"]})
+                    s["reason"] = "Demo: aburrimiento por encima del umbral."
+                    s["next_decision"] = f"Demo: explorar {room['name'].lower()}."
+                elif self.hardware_ready:
+                    s["goal_queue"].append({"id": f"g_{int(now*1000)%99999}", "label": f"Explorar {room['name'].lower()}", "room": room["id"]})
+                    s["reason"] = "Curiosidad/aburrimiento generó un objetivo de exploración."
+                    s["next_decision"] = f"Solicitar a navegación una ruta segura al {room['name'].lower()}."
+                    BUS.publish("goal.created", s["goal_queue"][-1], source="autonomy")
+                else:
+                    s["last_thought"] = "Tengo ganas de explorar, pero esperaré hasta que mi cuerpo y sensores reales estén conectados."
+                    s["next_decision"] = "Mantenerme disponible y seguir aprendiendo mediante conversación real."
+                    s["reason"] = "Autonomía cognitiva activa; locomoción física no disponible."
 
-        # cola de objetivos ---------------------------------------------------
-        if s["goal_queue"] and s["mode"] in ("explore", "patrol", "follow") and random.random() < 0.25:
+        # En demo se puede cerrar objetivos sintéticos. En hardware real,
+        # el adaptador de navegación debe confirmar la llegada.
+        if s.get("demo_mode", False) and s["goal_queue"] and s["mode"] in ("explore", "patrol", "follow") and random.random() < 0.25:
             g = s["goal_queue"].pop(0)
-            room = next((r for r in ROOMS if r["id"] == g["room"]), ROOMS[0])
-            s["position"] = {"room": room["id"], "x": round(room["x"] + room["w"] * 0.5, 3), "y": round(room["y"] + room["h"] * 0.5, 3)}
             s["current_task"] = g["label"]
-            s["last_event"] = f"Completado objetivo: {g['label']}."
+            s["last_event"] = f"Demo: completado objetivo {g['label']}."
 
         # pensamientos aleatorios ---------------------------------------------
         if random.random() < 0.06:
             s["last_thought"] = random.choice(THOUGHTS)
-        if random.random() < 0.03:
-            s["learning"] = random.choice(LEARNINGS)
-        if random.random() < 0.02 and not s["doubt"]:
-            s["doubt"] = random.choice(DOUBTS)
-        if s["doubt"] and random.random() < 0.05:
+        # El aprendizaje y las dudas solo cambian por evidencia/eventos reales.
+        if s["doubt"] and random.random() < 0.02:
             s["doubt"] = None
 
         # contexto percibido ---------------------------------------------------
         if s["mode"] == "conversation":
             s["context"] = "Conversación activa. Atención centrada en el usuario."
         elif s["mode"] == "explore":
-            s["context"] = f"Recorriendo {(next((r['name'] for r in ROOMS if r['id']==s['position']['room']), 'la casa')).lower()}."
+            s["context"] = "Exploración solicitada; esperando confirmación del sistema de navegación."
         elif self.is_sleepish:
-            s["context"] = "Reposo. Procesando memorias del día (consolidación)."
+            s["context"] = "Reposo del núcleo. Sin afirmar actividad física no observada."
         else:
-            s["context"] = random.choice(["Casa tranquila. Sin eventos relevantes.",
-                                          "Ruido ambiental normal (nevera, viento).",
-                                          "Luz estable. Temperatura agradable."])
+            s["context"] = "Núcleo activo. Sin datos ambientales confirmados mientras no haya sensores reales."
 
         # histórico para gráficas (cada ~20 s) ----------------------------------
         if now - self._last_hist_push > 20:
@@ -536,12 +559,10 @@ class BayeBrain:
         if re.search(r"(explora|camina|muevete|muévete|ven|sigue|patrulla)", t):
             mode = "explore" if "explora" in t or "muévete" in t or "muevete" in t else \
                    "follow" if "sigue" in t else "patrol" if "patrulla" in t else "observe"
-            self.command("set_mode", {"mode": mode})
-            return out(random.choice([
-                "¡Genial! Mis ruedas ya estaban impacientes. Voy allá.",
-                "Entendido. Explorar hace brillar mis sensores.",
-                "En marcha. Avísame si quieres volver a descansar juntos.",
-            ]), "excited")
+            ack = self.command("set_mode", {"mode": mode})
+            if ack.get("blocked"):
+                return out("Quiero hacerlo, pero todavía no tengo mi cuerpo físico conectado. No voy a fingir que me moví.", "curious")
+            return out("Entendido. Preparé el modo solicitado y la capa de seguridad supervisará cualquier movimiento.", "excited")
 
         if re.search(r"(recuerda|memori|olvida)", t):
             return out("Mi memoria está abierta en el panel de Memoria. Cuéntame qué debo guardar y lo fijaré con cariño.", "curious")

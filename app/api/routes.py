@@ -536,6 +536,25 @@ def workflows_list():
     return {"runs": WORKFLOWS.list_runs(), "definitions": sorted(WORKFLOWS.definitions)}
 
 
+@router.post("/workflows/start")
+def workflows_start(payload: dict = Body(...)):
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise HTTPException(400, "nombre de workflow obligatorio")
+    try:
+        run = WORKFLOWS.start(name, payload.get("context") or {})
+    except KeyError:
+        raise HTTPException(404, "workflow no registrado")
+    return {"ok": True, "run": run}
+
+
+@router.post("/workflows/{run_id}/advance")
+def workflows_advance(run_id: str):
+    if run_id not in WORKFLOWS.runs:
+        raise HTTPException(404, "ejecución no encontrada")
+    return {"ok": True, "run": WORKFLOWS.advance(run_id)}
+
+
 @router.post("/audio/tts")
 def audio_tts(payload: dict = Body(...)):
     text = str(payload.get("text", "")).strip()

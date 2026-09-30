@@ -3,74 +3,133 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f7f7f5">
-  <title>BAY-E</title>
+  <meta name="theme-color" content="#f5f4f1">
+  <meta name="color-scheme" content="light">
+  <title>BAY-E · Companion Core</title>
   <link rel="stylesheet" href="/static/css/baye.css">
 </head>
 <body>
 <div class="app">
+  <div class="sidebar-scrim" id="sidebar-scrim"></div>
+
   <aside class="sidebar" id="sidebar">
     <div class="side-head">
-      <button class="logo-btn" id="home-btn" aria-label="BAY-E"><span class="mini-eye"></span><i></i><span class="mini-eye"></span></button>
-      <strong>BAY-E</strong>
-      <button class="side-close" id="side-close">×</button>
+      <button class="logo-btn" id="home-btn" aria-label="Ir a BAY-E">
+        <span class="mini-eye"></span><i></i><span class="mini-eye"></span>
+      </button>
+      <div class="brand-copy">
+        <strong>BAY-E</strong>
+        <span>Companion Core</span>
+      </div>
+      <button class="side-close icon-btn" id="side-close" aria-label="Cerrar menú">×</button>
     </div>
-    <button class="new-chat" id="new-chat">＋ Nuevo chat</button>
+
+    <button class="new-chat" id="new-chat">
+      <span class="new-chat-plus">＋</span>
+      <span>Nuevo chat</span>
+      <kbd>⌘ K</kbd>
+    </button>
+
     <div class="side-label">CONVERSACIONES</div>
     <div class="threads" id="threads"></div>
-    <div class="side-bottom">
-      <button data-panel="mind">♡ <span>Corazón y mente</span></button>
-      <button data-panel="memory">◇ <span>Memoria</span></button>
-      <button data-panel="vision">◉ <span>Visión</span></button>
-      <button data-panel="devices">⌁ <span>Dispositivos</span></button>
-      <button data-panel="system">⚙ <span>Sistema</span></button>
+
+    <nav class="side-bottom" aria-label="Herramientas de BAY-E">
+      <button data-panel="mind"><span class="nav-icon">♡</span><span>Corazón y mente</span></button>
+      <button data-panel="memory"><span class="nav-icon">◇</span><span>Memoria</span></button>
+      <button data-panel="vision"><span class="nav-icon">◉</span><span>Visión</span></button>
+      <button data-panel="devices"><span class="nav-icon">⌁</span><span>Dispositivos</span></button>
+      <button data-panel="system"><span class="nav-icon">⚙</span><span>Sistema</span></button>
+    </nav>
+
+    <div class="core-status">
+      <span class="core-dot"></span>
+      <div><strong>Core local</strong><small>Seguridad activa</small></div>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <button class="menu-btn" id="menu-btn">☰</button>
-      <div class="top-title"><strong id="thread-title">BAY-E</strong><span id="status-line">conectando…</span></div>
-      <div class="top-actions"><span class="provider" id="provider">IA · —</span><button id="mind-btn">Mente</button></div>
+      <div class="topbar-left">
+        <button class="menu-btn icon-btn" id="menu-btn" aria-label="Abrir menú">☰</button>
+        <div class="top-title">
+          <strong id="thread-title">BAY-E</strong>
+          <span id="status-line">conectando…</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="provider" id="provider"><i></i> IA · —</span>
+        <button class="mind-pill" id="mind-btn"><span>♡</span> Mente</button>
+      </div>
     </header>
 
     <section class="conversation" id="conversation">
       <div class="empty-state" id="empty-state">
-        <div id="face-main" class="face-main"></div>
-        <h1>Hola, soy BAY-E.</h1>
-        <p>Tu compañero. Puedo conversar, recordar, aprender reglas, observar y ayudarte desde un mismo lugar.</p>
-        <div class="suggestions">
-          <button data-prompt="¿Qué recuerdas de mí?">¿Qué recuerdas de mí?</button>
-          <button data-prompt="¿Cómo te sientes ahora?">¿Cómo te sientes?</button>
-          <button data-prompt="Muéstrame tu diagnóstico del sistema">Diagnóstico</button>
-          <button data-prompt="¿Qué sabes de la casa?">Mundo conocido</button>
+        <div class="presence">
+          <div class="presence-halo"></div>
+          <div id="face-main" class="face-main"></div>
+          <div class="presence-status">
+            <span class="presence-dot"></span>
+            <span>Estoy aquí</span>
+          </div>
+        </div>
+
+        <div class="welcome-copy">
+          <p class="eyebrow">COMPAÑERO LOCAL</p>
+          <h1>Hola. Soy <span>BAY-E</span>.</h1>
+          <p>Conversemos. Puedo recordar lo que decidas enseñarme, observar con tus permisos y ayudarte sin fingir capacidades que todavía no tengo.</p>
+        </div>
+
+        <div class="suggestions" aria-label="Sugerencias">
+          <button data-prompt="¿Qué recuerdas de mí?"><span>◇</span><b>Memoria</b><small>¿Qué recuerdas de mí?</small></button>
+          <button data-prompt="¿Cómo te sientes ahora?"><span>♡</span><b>Estado</b><small>¿Cómo te sientes?</small></button>
+          <button data-prompt="¿Qué sabes de la casa?"><span>⌂</span><b>Mundo</b><small>¿Qué conoces de la casa?</small></button>
+          <button data-prompt="Muéstrame tu diagnóstico del sistema"><span>◎</span><b>Sistema</b><small>Comprueba tu estado</small></button>
         </div>
       </div>
       <div class="messages" id="messages"></div>
     </section>
 
     <div class="composer-zone">
-      <div class="composer">
-        <button class="voice-btn" id="voice-btn" title="Hablar">◉</button>
-        <textarea id="prompt" rows="1" maxlength="8000" placeholder="Escribe a BAY-E…"></textarea>
-        <button class="send-btn" id="send-btn" title="Enviar">↑</button>
+      <div class="composer-shell">
+        <div class="composer">
+          <button class="voice-btn" id="voice-btn" title="Hablar con BAY-E" aria-label="Hablar con BAY-E">
+            <span class="mic-glyph">●</span>
+          </button>
+          <textarea id="prompt" rows="1" maxlength="8000" placeholder="Habla con BAY-E…"></textarea>
+          <button class="send-btn" id="send-btn" title="Enviar" aria-label="Enviar">↑</button>
+        </div>
+        <div class="composer-foot">
+          <span class="activity-line"><i></i><span id="activity">Listo</span></span>
+          <span>Las acciones físicas siempre pasan por Safety Governor.</span>
+        </div>
       </div>
-      <div class="composer-foot"><span id="activity">Listo</span><span>BAY-E puede equivocarse. Las acciones físicas pasan por su capa de seguridad.</span></div>
     </div>
   </main>
 
-  <aside class="drawer" id="drawer">
-    <header><div><small>ADMINISTRAR</small><h2 id="drawer-title">Corazón y mente</h2></div><button id="drawer-close">×</button></header>
+  <aside class="drawer" id="drawer" aria-label="Panel de BAY-E">
+    <header>
+      <div><small>COMPANION CORE</small><h2 id="drawer-title">Corazón y mente</h2></div>
+      <button id="drawer-close" class="icon-btn" aria-label="Cerrar panel">×</button>
+    </header>
 
     <section class="drawer-view active" data-view="mind">
-      <div class="mind-face" id="face-mind"></div>
-      <div class="state-card"><div><small>ESTADO</small><strong id="mind-state">—</strong></div><span id="mind-mode">—</span></div>
-      <div class="mind-readout"><label>Pensamiento operativo</label><p id="mind-thought">—</p></div>
-      <div class="mind-readout"><label>Razón actual</label><p id="mind-reason">—</p></div>
-      <div class="mind-readout"><label>Siguiente decisión</label><p id="mind-next">—</p></div>
+      <div class="mind-presence">
+        <div class="mind-face" id="face-mind"></div>
+        <div>
+          <small>ESTADO ACTUAL</small>
+          <strong id="mind-state">—</strong>
+          <span id="mind-mode">—</span>
+        </div>
+      </div>
+
+      <div class="explain-grid">
+        <div class="mind-readout"><label>Objetivo / estado operativo</label><p id="mind-thought">—</p></div>
+        <div class="mind-readout"><label>Por qué actúa así</label><p id="mind-reason">—</p></div>
+        <div class="mind-readout"><label>Siguiente decisión visible</label><p id="mind-next">—</p></div>
+      </div>
 
       <div class="section-head"><div><small>IDENTIDAD EDITABLE</small><h3>Reglas, principios y objetivos</h3></div></div>
-      <p class="help">Esto modifica el comportamiento de BAY-E. No muestra ni edita razonamiento privado interno.</p>
+      <p class="help">Estas entradas sí modifican el comportamiento. No muestran razonamiento privado ni una cadena de pensamiento interna.</p>
       <form class="rule-form" id="rule-form">
         <select id="rule-kind">
           <option value="restriction">Restricción</option>
@@ -86,30 +145,42 @@
     </section>
 
     <section class="drawer-view" data-view="memory">
+      <div class="panel-intro"><span>◇</span><div><strong>Memoria auditable</strong><p>Busca lo que BAY-E conserva y verifica de dónde viene.</p></div></div>
       <input class="search" id="memory-search" placeholder="Buscar recuerdos…">
       <div class="card-list" id="memory-list"></div>
     </section>
 
     <section class="drawer-view" data-view="vision">
-      <div class="vision-box"><span class="vision-eye">●────●</span><strong>Visión de BAY-E</strong><small id="vision-status">comprobando…</small></div>
+      <div class="vision-box">
+        <div class="vision-face">●────●</div>
+        <strong>Visión de BAY-E</strong>
+        <small id="vision-status">comprobando…</small>
+      </div>
       <div class="card-list" id="vision-list"></div>
       <button class="wide-btn" data-prompt="¿Qué ves ahora mismo?">Preguntar por lo que ve</button>
     </section>
 
     <section class="drawer-view" data-view="devices">
-      <p class="help">Teléfonos y futuros sensores que comparten percepción con el mismo BAY-E Core.</p>
+      <div class="panel-intro"><span>⌁</span><div><strong>Un solo BAY-E</strong><p>Teléfonos y futuros sensores son nodos del mismo Core, no otra personalidad.</p></div></div>
       <div class="card-list" id="device-list"></div>
     </section>
 
     <section class="drawer-view" data-view="system">
+      <div class="panel-intro"><span>◎</span><div><strong>Estado del sistema</strong><p>Diagnóstico visible de modelos, sensores, voz y hardware.</p></div></div>
       <div class="card-list" id="diagnostics"></div>
       <button class="wide-btn" data-prompt="Muéstrame tu diagnóstico del sistema">Explicarlo en el chat</button>
     </section>
   </aside>
 
   <div class="modal" id="edit-modal" hidden>
-    <div class="modal-card"><h3>Editar mensaje</h3><textarea id="edit-text"></textarea><div><button id="edit-cancel">Cancelar</button><button class="primary" id="edit-save">Guardar</button></div></div>
+    <div class="modal-card">
+      <div class="modal-kicker">MENSAJE</div>
+      <h3>Editar mensaje</h3>
+      <textarea id="edit-text"></textarea>
+      <div><button id="edit-cancel">Cancelar</button><button class="primary" id="edit-save">Guardar</button></div>
+    </div>
   </div>
+
   <div class="toast" id="toast"></div>
 </div>
 <script src="/static/js/face.js"></script>

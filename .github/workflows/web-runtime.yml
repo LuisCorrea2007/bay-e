@@ -40,7 +40,10 @@ jobs:
           with sync_playwright() as p:
               b=p.chromium.launch(headless=True)
               page=b.new_page(viewport={"width":1440,"height":950})
+              page.on("console", lambda msg: print("BROWSER", msg.type, msg.text))
+              page.on("pageerror", lambda exc: print("PAGEERROR", exc))
               page.goto("http://127.0.0.1:8300", wait_until="networkidle")
+              assert page.evaluate("typeof document.querySelector('#send-btn').onclick === 'function'")
               assert page.locator("#face-main .eye").count() == 2
               assert page.locator("#face-main .bridge").count() == 1
               assert page.locator("#face-main").inner_text().strip() == ""
@@ -77,6 +80,9 @@ jobs:
               b.close()
           PY
           python /tmp/test_ui.py
+      - name: Print BAY-E server log on failure
+        if: failure()
+        run: cat /tmp/baye.log || true
       - uses: actions/upload-artifact@v4
         with:
           name: BAY-E-web-runtime

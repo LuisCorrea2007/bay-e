@@ -3,6 +3,7 @@ name: BAY-E Android APK
 on:
   push:
     branches:
+      - main
       - feature/chat-mind-mobile
   workflow_dispatch:
 

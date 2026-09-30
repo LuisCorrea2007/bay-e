@@ -1,0 +1,40 @@
+name: BAY-E v2 Runtime Capture
+on:
+  push:
+    branches:
+      - redesign/chat-first-v2
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Start BAY-E
+        run: |
+          nohup uvicorn main:app --host 127.0.0.1 --port 8300 > /tmp/baye-v2.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8300/health; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/baye-v2.log
+          exit 1
+      - name: Capture
+        run: python scripts/capture_chat_v2.py
+      - name: Logs
+        if: always()
+        run: cat /tmp/baye-v2.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: baye-v2-screenshots
+          path: screenshots-v2/
+          if-no-files-found: error

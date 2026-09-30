@@ -18,6 +18,8 @@ class RobotTelemetry:
     charging: bool = False
     room: str | None = None
     pose: dict[str, float] | None = None
+    emergency_stop: bool = False
+    collision_clear: bool = False
 
 
 class RobotAdapter:
@@ -34,6 +36,12 @@ class RobotAdapter:
 
     def navigate(self, goal: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("robot navigation adapter is offline")
+
+    def arm(self, side: str, shoulder: float, elbow: float, gripper: float) -> dict[str, Any]:
+        raise RuntimeError("robot arm adapter is offline")
+
+    def emergency_stop(self) -> dict[str, Any]:
+        raise RuntimeError("robot hardware adapter is offline")
 
 
 def _build_robot() -> RobotAdapter:

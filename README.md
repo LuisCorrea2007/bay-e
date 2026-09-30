@@ -1,62 +1,140 @@
 # BAY-E
 
-BAY-E is an autonomous companion-robot project. The current repository contains
-the live web console plus the first local Python core. The long-term target is a
-warm, persistent companion with a mobile WALL-E-like body, perception, memory,
-autonomy and deterministic physical safety.
+BAY-E is a local-first autonomous companion-robot platform. Its interaction
+model is inspired by the warmth and care of Baymax, while its future physical
+platform is designed around a compact tracked WALL-E-like body.
 
-## Current status
+The project is not a chatbot skin. It separates perception, memory, cognition,
+autonomy, deterministic safety and physical robot adapters so BAY-E can evolve
+from a desktop companion into a real home robot without replacing its mind.
 
-Working now:
-- FastAPI web app
-- animated live BAY-E face
-- WebSocket state stream
-- SQLite chat/memory/tasks/settings/logs
-- editable emotional state and personality UI
-- memory CRUD/import/export
-- goal/task/control console
-- deterministic Safety Governor foundation
-- Guardian health registry
-- internal Event Bus
+## What works now
 
-Not real yet:
-- camera/object recognition
-- microphone STT
-- TTS voice
-- ROS 2 / Nav2
-- motors, arms, head hardware
-- physical battery telemetry
-- autonomous home navigation
-- model/LLM provider integration
+- FastAPI local core + HTML/CSS/JavaScript live console
+- animated BAY-E face: blink, gaze, listening, thinking, speaking and emotion
+- WebSocket live state/event stream
+- persistent SQLite chat, memories, tasks, settings, emotion history and world data
+- episodic/semantic/person/object/spatial/routine memory CRUD
+- local-first model router: llama.cpp -> Ollama -> deterministic fallback
+- memory-aware and world-aware conversation
+- dynamic emotional/drives engine with persistence across restarts
+- autonomous goal proposals without fake physical execution
+- task/routine scheduler
+- safe skills and checkpointed workflows
+- Event Bus + Guardian health registry
+- deterministic Safety Governor between cognition and hardware
+- real browser camera capture
+- OpenCV face + motion perception
+- optional local YOLOv8 ONNX object/animal detection
+- persistent semantic World Model and real observation history
+- evidence-based routine/pattern discovery
+- opt-in local face identity using YuNet + SFace, with explicit consent
+- browser wake-word mode in compatible browsers
+- Piper TTS and whisper.cpp backend adapters, with browser voice fallback
+- health/wellness measurement and trend panel (non-diagnostic)
+- optional ROS 2 bridge: cmd_vel, head target, battery, hardware heartbeat, room and Nav2 goal submission
+- Mac/Linux and Windows launchers; no Docker required
+- automated Python + JavaScript CI
 
-**Important:** BAY-E does not claim movement, vision or sensor observations when
-those adapters are not connected. Synthetic events are off by default.
+## Truthfulness rule
 
-## Run
+BAY-E does not claim that it saw, moved, measured, learned or reached a place
+unless the corresponding real input or hardware adapter confirms it. Synthetic
+behavior exists only behind explicit demo mode.
+
+## Quick start
+
+macOS / Linux:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn main:app --reload
+bash start.command
 ```
 
-Open http://127.0.0.1:8000
+Windows:
 
-## Tests
-
-```bash
-python -m unittest discover -s tests -v
+```bat
+start.bat
 ```
+
+Then open http://127.0.0.1:8300.
+
+No local LLM is required to boot. Without llama.cpp/Ollama, BAY-E uses a
+deterministic fallback instead of inventing an intelligent answer.
+
+See [docs/SETUP.md](docs/SETUP.md) for local AI, camera, voice and ROS 2 setup.
 
 ## Architecture
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+```
+UI / live face
+      |
+ REST + WebSocket
+      |
+BAY-E Core
+ |-- Companion / emotions / drives
+ |-- Cognition / logical agents / model router
+ |-- Memory / retrieval
+ |-- World Model / learning
+ |-- Skills / workflows / scheduler
+ |-- Health observation
+ |-- Event Bus / Guardian
+ |-- Safety Governor
+      |
+Adapters
+ |-- Vision / OpenCV / optional YOLO
+ |-- Audio / Piper / whisper.cpp
+ |-- Face identity (opt-in)
+ |-- ROS 2 / Nav2
+      |
+future MCU + tracked body + head + arms + sensors
+```
 
-## Safety / health boundary
+## Physical safety
 
-AI/model output will never directly control PWM or motor power. Physical actions
-must pass through deterministic safety and hardware adapters.
+AI/model output never writes motor PWM or servo power directly. Physical motion
+requires all of the following:
 
-Health capabilities are planned as measurement/trend/alert assistance. BAY-E is
-not an autonomous diagnostic or prescription system.
+1. the Motors module enabled,
+2. ROS 2 bridge enabled in settings,
+3. `BAYE_ROS2_ENABLE=1`,
+4. a live `/baye/hardware_alive` heartbeat,
+5. Safety Governor approval.
+
+STOP remains admissible even when other control paths fail.
+
+## Health boundary
+
+BAY-E can store measurements and show descriptive trends. It is not a medical
+device and does not autonomously diagnose conditions or prescribe medication.
+The old open-source Baymax health projects were studied as research references;
+their diagnosis/prescription logic was not copied into this system.
+
+## Privacy
+
+- private mode stops browser camera and wake-word listening
+- memories can be edited/deleted/exported
+- facial identity is opt-in and requires explicit consent
+- enrollment photos are not persisted; only local feature vectors are stored
+- deleting all memories also removes local facial identity profiles
+- runtime databases/captures/backups are excluded from Git
+
+## Open-source research influences
+
+The architecture was informed by public Baymax projects including
+The-Semicolons/Baymax, neild0/BayMax, titungpemba/Baymax-AI,
+amanunreal/baymax, laofahai/baymax, joehsmash/baymax,
+FelixSeptem/baymax and ParsifalC/NetEaseBaymaxDemo.
+
+BAY-E reimplements concepts rather than copying source from repositories without
+a clear license. Any source incorporated later from MIT/Apache projects must
+retain the applicable notices.
+
+## Development
+
+```bash
+python -m unittest discover -s tests -v
+node --check static/js/views.js
+uvicorn main:app --reload
+```
+
+Current development line: **v1.1.0-dev**.

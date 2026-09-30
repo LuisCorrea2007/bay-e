@@ -6,7 +6,7 @@ venv/
 .pytest_cache/
 .mypy_cache/
 
-# Runtime data (local, private)
+# Secrets\n.env\n.env.*\n!.env.example\n\n# Runtime data (local, private)
 data/*.db
 data/*.db-*
 data/camera/

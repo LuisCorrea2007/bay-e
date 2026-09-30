@@ -21,7 +21,10 @@ SENSITIVE_TERMS = {
     "partido politico", "voto", "votar", "orientación sexual", "orientacion sexual",
     "diagnóstico", "diagnostico", "enfermedad", "medicación", "medicacion",
     "medicina", "depresión", "depresion", "ansiedad", "embarazo", "salario",
-    "sueldo", "deuda", "dirección", "direccion", "domicilio",
+    "sueldo", "deuda", "dirección", "direccion", "domicilio", "vivo en", "vivienda",
+    "casa en", "ubicación", "ubicacion", "médico", "medico", "hospital", "terapia",
+    "pastilla", "insulina", "diabetes", "presión", "presion", "iglesia", "misa",
+    "templo", "candidato", "presidente", "alcalde", "ideología", "ideologia",
 }
 
 PATTERNS: list[tuple[re.Pattern[str], str, str, float]] = [
@@ -31,7 +34,7 @@ PATTERNS: list[tuple[re.Pattern[str], str, str, float]] = [
      "semantic", "Al usuario no le gusta {value}.", 0.84),
     (re.compile(r"^\s*prefiero\s+(.{2,180})[.!?]?\s*$", re.I),
      "semantic", "El usuario prefiere {value}.", 0.86),
-    (re.compile(r"^\s*mi (?:comida|color|música|musica|película|pelicula|serie|juego|deporte) favorito(?:a)? es\s+(.{2,160})[.!?]?\s*$", re.I),
+    (re.compile(r"^\s*mi (?:comida|color|música|musica|película|pelicula|serie|juego|deporte) favorit[oa] es\s+(.{2,160})[.!?]?\s*$", re.I),
      "semantic", "Una preferencia favorita del usuario es {value}.", 0.88),
     (re.compile(r"^\s*tengo un(?:a)?\s+(perro|perra|gato|gata|mascota)\s+(?:que se llama|llamad[oa])\s+([\wÁÉÍÓÚÜÑáéíóúüñ -]{1,60})[.!?]?\s*$", re.I),
      "semantic", "El usuario tiene {value}.", 0.9),

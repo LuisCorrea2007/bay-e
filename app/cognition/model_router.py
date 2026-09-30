@@ -18,6 +18,7 @@ import urllib.request
 from typing import Any, Protocol
 
 from app.core.guardian import GUARDIAN
+from app.core import db
 
 
 @dataclass(slots=True)
@@ -47,9 +48,10 @@ def _post_json(url: str, payload: dict[str, Any], timeout: float = 18.0) -> dict
 class LlamaCppProvider:
     name = "llama.cpp"
 
-    def __init__(self) -> None:
-        self.base = os.getenv("BAYE_LLAMA_URL", "http://127.0.0.1:8080").rstrip("/")
-        self.model = os.getenv("BAYE_LLAMA_MODEL", "local")
+    def __init__(self, config: dict | None = None) -> None:
+        config = config or {}
+        self.base = str(config.get("llama_url") or os.getenv("BAYE_LLAMA_URL", "http://127.0.0.1:8080")).rstrip("/")
+        self.model = str(config.get("llama_model") or os.getenv("BAYE_LLAMA_MODEL", "local"))
 
     def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply:
         data = _post_json(
@@ -63,9 +65,10 @@ class LlamaCppProvider:
 class OllamaProvider:
     name = "ollama"
 
-    def __init__(self) -> None:
-        self.base = os.getenv("BAYE_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-        self.model = os.getenv("BAYE_OLLAMA_MODEL", "qwen2.5:3b")
+    def __init__(self, config: dict | None = None) -> None:
+        config = config or {}
+        self.base = str(config.get("ollama_url") or os.getenv("BAYE_OLLAMA_URL", "http://127.0.0.1:11434")).rstrip("/")
+        self.model = str(config.get("ollama_model") or os.getenv("BAYE_OLLAMA_MODEL", "qwen2.5:3b"))
 
     def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply:
         data = _post_json(
@@ -97,13 +100,38 @@ class FallbackProvider:
 
 class ModelRouter:
     def __init__(self) -> None:
-        order = os.getenv("BAYE_MODEL_ORDER", "llama.cpp,ollama").split(",")
-        known = {"llama.cpp": LlamaCppProvider, "ollama": OllamaProvider}
-        self.providers = [known[n.strip()]() for n in order if n.strip() in known]
+        self.providers: list[Provider] = []
         self.fallback = FallbackProvider()
         self.last_provider = "fallback"
+        self._fingerprint = ""
+        self.configure({})
+
+    def configure(self, config: dict | None) -> None:
+        config = dict(config or {})
+        order_value = str(config.get("provider_order") or os.getenv("BAYE_MODEL_ORDER", "llama.cpp,ollama"))
+        known = {"llama.cpp": LlamaCppProvider, "ollama": OllamaProvider}
+        self.providers = [known[n.strip()](config) for n in order_value.split(",") if n.strip() in known]
+        self._fingerprint = json.dumps(config, sort_keys=True, ensure_ascii=False)
+
+    def _refresh_config(self) -> None:
+        try:
+            config = db.get_setting("settings:ai", {}) or {}
+            fp = json.dumps(config, sort_keys=True, ensure_ascii=False)
+            if fp != self._fingerprint:
+                self.configure(config)
+        except Exception:
+            pass
+
+    def status(self) -> dict:
+        self._refresh_config()
+        return {
+            "last_provider": self.last_provider,
+            "providers": [{"name": p.name, "model": getattr(p, "model", ""), "base": getattr(p, "base", "")} for p in self.providers],
+            "fallback": self.fallback.name,
+        }
 
     def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply:
+        self._refresh_config()
         for provider in self.providers:
             try:
                 out = provider.generate(messages, temperature=temperature)

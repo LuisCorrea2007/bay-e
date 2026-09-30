@@ -392,11 +392,7 @@ def guardian_state():
 # ================================================================ capacidades reales
 @router.get("/models")
 def models_state():
-    return {
-        "last_provider": MODELS.last_provider,
-        "providers": [p.name for p in MODELS.providers],
-        "fallback": MODELS.fallback.name,
-    }
+    return MODELS.status()
 
 
 @router.get("/skills")

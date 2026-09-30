@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="/static/css/baye.css">\n<link rel="stylesheet" href="/static/css/chat-v2.css">
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%230b1524"/><circle cx="34" cy="46" r="9" fill="%235eeaff"/><rect x="27" y="46" width="14" height="14" fill="%230b1524"/><circle cx="66" cy="46" r="9" fill="%235eeaff"/><rect x="59" y="46" width="14" height="14" fill="%230b1524"/></svg>'>
 </head>
-<body data-view="dashboard">
+<body data-view="chat">
 
 <div class="orb orb-a"></div><div class="orb orb-b"></div><div class="grid-overlay"></div>
 
@@ -31,8 +31,8 @@
     <div class="brand-txt"><b>{{ name }}</b><span>v{{ version }}</span></div>
   </div>
 
-  <button class="rail-btn is-active" data-nav="dashboard" title="Dashboard"><i data-icon="home"></i><span>Dashboard</span></button>
-  <button class="rail-btn" data-nav="chat" title="Chat"><i data-icon="chat"></i><span>Chat</span></button>
+  <button class="rail-btn" data-nav="dashboard" title="Dashboard"><i data-icon="home"></i><span>Dashboard</span></button>
+  <button class="rail-btn is-active" data-nav="chat" title="Chat"><i data-icon="chat"></i><span>Chat</span></button>
   <button class="rail-btn" data-nav="memory" title="Memoria"><i data-icon="brain"></i><span>Memoria</span></button>
   <button class="rail-btn" data-nav="heart" title="Corazón emocional"><i data-icon="heart"></i><span>Corazón</span></button>
   <button class="rail-btn" data-nav="health" title="Salud y bienestar"><i data-icon="pulse"></i><span>Salud</span></button>
@@ -98,7 +98,7 @@
   <section class="views" id="views">
 
     <!-- ─────────── DASHBOARD ─────────── -->
-    <article class="view is-active" id="view-dashboard">
+    <article class="view" id="view-dashboard">
       <div class="dash-grid">
         <div class="card live-card">
           <div class="card-h"><i data-icon="pulse"></i><h3>Latido actual</h3><span class="live-badge"><i></i>en vivo</span></div>
@@ -138,7 +138,7 @@
     </article>
 
     <!-- ─────────── CHAT ─────────── -->
-    <article class="view" id="view-chat">
+    <article class="view is-active" id="view-chat">
       <div class="chat-wrap card">
         <div class="chat-head">
           <div class="card-h"><i data-icon="chat"></i><h3>Conversación con {{ name }}</h3></div>

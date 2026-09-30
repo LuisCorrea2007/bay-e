@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - integration/**
       - feature/**
       - release/**
   workflow_dispatch:
@@ -26,7 +27,11 @@ jobs:
         run: |
           nohup uvicorn main:app --host 127.0.0.1 --port 8300 >/tmp/baye.log 2>&1 &
           for i in {1..30}; do
-            curl -fsS http://127.0.0.1:8300/health && exit 0
+            if curl -fsS http://127.0.0.1:8300/health >/dev/null; then
+              curl -fsS http://127.0.0.1:8300/api/v1/state >/dev/null
+              curl -fsS http://127.0.0.1:8300/api/state >/dev/null
+              exit 0
+            fi
             sleep 1
           done
           cat /tmp/baye.log

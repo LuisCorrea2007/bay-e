@@ -59,7 +59,7 @@ async function pairIfNeeded(){
   const code=$('#pair-code').value.trim();
   if(!/^\d{6}$/.test(code))throw new Error('Escribe el código de 6 dígitos generado por BAY-E Core');
   const info=await Device.getInfo();
-  const r=await api('POST','/api/mobile/pair/claim',{
+  const r=await api('POST','/api/v1/mobile/pair/claim',{
     id:state.nodeId,code,name:info.name||info.model||'Android BAY-E',platform:info.platform||'android'
   },false,false);
   await saveToken(r.token);
@@ -72,7 +72,7 @@ async function heartbeat(){
     const payload={id:state.nodeId,name:info.name||info.model||'Android BAY-E',platform:info.platform||'android',
       capabilities:{camera:true,microphone:true,battery:true,network:true,motion:true,geolocation:true},
       telemetry:{battery:state.battery,network:state.network,motion:state.motion,model:info.model,osVersion:info.osVersion}};
-    await api('POST','/api/mobile/heartbeat',payload);$('#status').textContent='conectado · seguro';
+    await api('POST','/api/v1/mobile/heartbeat',payload);$('#status').textContent='conectado · seguro';
   }catch(e){
     $('#status').textContent=e.status===401?'emparejamiento requerido':'sin conexión';
     if(e.status===401){await saveToken('');$('#settings').showModal()}
@@ -82,7 +82,7 @@ async function loadChat(){
   if(!state.core||!state.token)return;
   try{
     const q='?node_id='+encodeURIComponent(state.nodeId)+'&thread_id='+encodeURIComponent(state.thread)+'&limit=100';
-    const r=await api('GET','/api/mobile/chat/history'+q);
+    const r=await api('GET','/api/v1/mobile/chat/history'+q);
     $('#messages').innerHTML='';for(const m of r.messages||[])add(m.role==='baye'?'baye':'user',m.content);
     $('#hero').hidden=(r.messages||[]).length>0;
   }catch(e){toast(e.status===401?'Vuelve a emparejar este teléfono':'No pude conectar con el Core')}
@@ -92,7 +92,7 @@ async function send(text){
   if(!state.token){$('#settings').showModal();return toast('Empareja este teléfono primero')}
   $('#prompt').value='';add('user',text);face('thinking');
   try{
-    const r=await api('POST','/api/mobile/chat/send',{text,thread_id:state.thread,node_id:state.nodeId});
+    const r=await api('POST','/api/v1/mobile/chat/send',{text,thread_id:state.thread,node_id:state.nodeId});
     add('baye',r.baye.content,(r.model?.provider||'')+' · '+(r.model?.model||''));
     await Haptics.impact({style:ImpactStyle.Light});await speak(r.baye.content);
   }catch(e){add('baye','No pude contactar mi Core: '+e.message)}
@@ -102,7 +102,7 @@ async function speak(text){
   if(!text)return;
   face('speaking');
   try{
-    const r=await fetch(base('/api/audio/tts'),{method:'POST',headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{})},body:JSON.stringify({text})});
+    const r=await fetch(base('/api/v1/audio/tts'),{method:'POST',headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{})},body:JSON.stringify({text})});
     if(r.ok){
       const blob=await r.blob(),url=URL.createObjectURL(blob),audio=new Audio(url);
       try{await new Promise((resolve,reject)=>{audio.onended=resolve;audio.onerror=reject;audio.play().catch(reject)});return}
@@ -128,7 +128,7 @@ async function camera(){
   try{
     const photo=await Camera.getPhoto({quality:72,resultType:CameraResultType.Base64,source:CameraSource.Camera,correctOrientation:true,width:1280});
     const fd=new FormData();fd.append('node_id',state.nodeId);fd.append('frame',b64blob(photo.base64String,'image/'+(photo.format||'jpeg')),'mobile.'+(photo.format||'jpeg'));
-    const r=await api('POST','/api/mobile/vision',fd,true);const labels=(r.detections||[]).map(x=>x.label).filter(Boolean);
+    const r=await api('POST','/api/v1/mobile/vision',fd,true);const labels=(r.detections||[]).map(x=>x.label).filter(Boolean);
     toast(labels.length?'Vi: '+labels.slice(0,4).join(', '):'Imagen observada; sin detecciones claras');
   }catch(e){toast('Cámara: '+e.message)}
 }
@@ -137,7 +137,7 @@ async function locationOnce(){
   try{
     const p=await Geolocation.requestPermissions();if(p.location!=='granted'&&p.coarseLocation!=='granted')return toast('Permiso de ubicación denegado');
     const pos=await Geolocation.getCurrentPosition({enableHighAccuracy:false,timeout:8000});
-    await api('POST','/api/mobile/location',{node_id:state.nodeId,lat:pos.coords.latitude,lon:pos.coords.longitude,remember:false});
+    await api('POST','/api/v1/mobile/location',{node_id:state.nodeId,lat:pos.coords.latitude,lon:pos.coords.longitude,remember:false});
     toast('Ubicación compartida una vez; no se guardó en memoria');
   }catch(e){toast('No pude compartir la ubicación')}
 }

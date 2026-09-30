@@ -55,7 +55,9 @@ app.add_middleware(
 
 # ------------------------------------------------------------------ estáticos
 app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")
-app.include_router(api_router)
+# API pública versionada. /api se conserva temporalmente como alias de compatibilidad.
+app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router, prefix="/api", include_in_schema=False)
 
 # ------------------------------------------------------------------ plantillas
 jinja = Environment(loader=FileSystemLoader(ROOT_DIR / "templates"), autoescape=True)

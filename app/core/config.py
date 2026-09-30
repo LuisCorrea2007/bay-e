@@ -14,7 +14,7 @@ BACKUP_DIR = DATA_DIR / "backups"                       # backups exportados
 for _d in (DATA_DIR, CAM_DIR, BACKUP_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.3.1"
 APP_NAME = "BAY-E"
 
 # Frecuencia del heartbeat del estado interno (segundos).

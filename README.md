@@ -161,6 +161,12 @@ npx cap open android
 
 Capacitor 8 requires Node 22+ for development.
 
+## REST API versioning
+
+The stable REST surface is mounted under `/api/v1`. The previous `/api`
+paths remain available as a compatibility alias for existing local clients, but
+new web/mobile code uses `/api/v1`. WebSocket remains at `/ws`.
+
 ## Architecture
 
 ```
@@ -235,7 +241,7 @@ node --check static/js/views.js
 uvicorn main:app --reload
 ```
 
-Current development baseline: **v2.3.0**.
+Current development baseline: **v2.3.1**.
 
 ### 2.0 definition of done
 

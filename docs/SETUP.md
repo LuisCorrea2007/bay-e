@@ -17,6 +17,12 @@ Run `start.bat`.
 The launcher creates `.venv`, installs Python requirements and opens
 http://127.0.0.1:8300.
 
+## REST API v1
+
+BAY-E exposes its stable REST contract under `/api/v1`. Existing `/api`
+routes remain as a temporary compatibility alias, so older local clients do not
+break during the migration. The live-state WebSocket remains `/ws`.
+
 ## Local brain
 
 BAY-E can use either:

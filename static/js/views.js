@@ -99,7 +99,7 @@ const Views = (() => {
       Net.on("indicator", (m) => this.indicator(m.value));
     },
     async loadHistory() {
-      const { messages } = await Net.api("GET", "/api/chat/history?limit=120");
+      const { messages } = await Net.api("GET", "/api/v1/chat/history?limit=120");
       $("#chat-scroll").innerHTML = "";
       messages.forEach((m) => this.renderMsg(m, true));
       this.scroll();
@@ -120,7 +120,7 @@ const Views = (() => {
     },
     async restFallback(text) {
       try {
-        const r = await Net.api("POST", "/api/chat/send", { text });
+        const r = await Net.api("POST", "/api/v1/chat/send", { text });
         this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.speakOut(r.baye.content); this.scroll();
       } catch (e) { toast("sin conexión con BAY-E", true); }
     },
@@ -166,7 +166,7 @@ const Views = (() => {
     async toolAction(a, msg) {
       if (a === "repeat") { this.speakOut(msg.content); toast("Repitiendo en voz alta…"); return; }
       try {
-        const r = await Net.api("POST", "/api/chat/flag", { id: msg.id, action: a });
+        const r = await Net.api("POST", "/api/v1/chat/flag", { id: msg.id, action: a });
         if (a === "pin") { toast(r.fixed ? "Mensaje fijado 📌" : "Desfijado"); $(`[data-id="${msg.id}"]`)?.classList.toggle("fixed", r.fixed); }
         if (a === "remember" || a === "memory") toast("Guardado en la memoria de BAY-E 🧠");
         if (a === "forget") { toast("Olvidado"); }
@@ -175,9 +175,9 @@ const Views = (() => {
     },
     async speakOut(text) {
       try {
-        if (this._audioStatus === undefined) this._audioStatus = await Net.api("GET", "/api/audio/status");
+        if (this._audioStatus === undefined) this._audioStatus = await Net.api("GET", "/api/v1/audio/status");
         if (this._audioStatus?.tts_available) {
-          const r = await fetch("/api/audio/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+          const r = await fetch("/api/v1/audio/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
           if (r.ok) {
             const url = URL.createObjectURL(await r.blob());
             const audio = new Audio(url);
@@ -307,7 +307,7 @@ const Views = (() => {
     },
     async load() {
       const f = this.filter;
-      const { memories } = await Net.api("GET", `/api/memories?q=${encodeURIComponent(f.q)}&type=${f.type}&tag=${f.tag}&archived=${f.archived}`);
+      const { memories } = await Net.api("GET", `/api/v1/memories?q=${encodeURIComponent(f.q)}&type=${f.type}&tag=${f.tag}&archived=${f.archived}`);
       this.cache = memories;
       // contadores por tipo
       for (const t of MEM_TYPES) {
@@ -374,22 +374,22 @@ const Views = (() => {
         case "edit": this.form(m); break;
         case "correct": {
           const val = prompt("Corrige esta memoria:", m.content);
-          if (val && val !== m.content) { await Net.api("POST", `/api/memories/${m.id}/correct`, { content: val }); toast("Corregida ✓ confianza reforzada"); this.load(); }
+          if (val && val !== m.content) { await Net.api("POST", `/api/v1/memories/${m.id}/correct`, { content: val }); toast("Corregida ✓ confianza reforzada"); this.load(); }
           break;
         }
-        case "pin": await Net.api("POST", `/api/memories/${m.id}/pin`, { on: !m.pinned }); this.load(); break;
-        case "archive": await Net.api("POST", `/api/memories/${m.id}/archive`, { on: !m.archived }); this.load(); break;
+        case "pin": await Net.api("POST", `/api/v1/memories/${m.id}/pin`, { on: !m.pinned }); this.load(); break;
+        case "archive": await Net.api("POST", `/api/v1/memories/${m.id}/archive`, { on: !m.archived }); this.load(); break;
         case "merge":
           if (!this.merging) {
             this.merging = m.id; $("#merge-src-t").textContent = m.content.slice(0, 40);
             $("#merge-bar").hidden = false; toast("Ahora haz clic en «fusionar» de la memoria destino");
           } else {
-            await Net.api("POST", "/api/memories/merge", { primary: this.merging, secondary: m.id });
+            await Net.api("POST", "/api/v1/memories/merge", { primary: this.merging, secondary: m.id });
             this.merging = null; $("#merge-bar").hidden = true; toast("Memorias fusionadas 🧬"); this.load();
           }
           break;
         case "del":
-          if (confirm("¿Borrar esta memoria para siempre?")) { await Net.api("DELETE", `/api/memories/${m.id}`); toast("Memoria borrada"); this.load(); }
+          if (confirm("¿Borrar esta memoria para siempre?")) { await Net.api("DELETE", `/api/v1/memories/${m.id}`); toast("Memoria borrada"); this.load(); }
           break;
       }
     },
@@ -414,15 +414,15 @@ const Views = (() => {
           tags: $("#mf-tags").value.split(",").map((t) => t.trim()).filter(Boolean), pinned: $("#mf-pin").checked,
         };
         if (!body.content) { toast("el contenido no puede estar vacío", true); return; }
-        if (isNew) await Net.api("POST", "/api/memories", body);
-        else await Net.api("PUT", `/api/memories/${m.id}`, body);
+        if (isNew) await Net.api("POST", "/api/v1/memories", body);
+        else await Net.api("PUT", `/api/v1/memories/${m.id}`, body);
         md.close(); toast(isNew ? "Recuerdo creado 🧠" : "Memoria actualizada"); this.load();
       };
     },
     async importFile(file) {
       if (!file) return;
       const fd = new FormData(); fd.append("file", file);
-      const r = await fetch("/api/memories/import", { method: "POST", body: fd });
+      const r = await fetch("/api/v1/memories/import", { method: "POST", body: fd });
       const j = await r.json();
       toast(`${j.imported} memorias importadas`); this.load();
     },
@@ -525,7 +525,7 @@ const Views = (() => {
       const unit = $("#health-unit").value.trim();
       if (!Number.isFinite(value) || !unit) return toast("Completa valor y unidad", true);
       try {
-        await Net.api("POST", "/api/health/measurements", { metric, value, unit, person_id: $("#health-person").value.trim(), source: "user", quality: 1 });
+        await Net.api("POST", "/api/v1/health/measurements", { metric, value, unit, person_id: $("#health-person").value.trim(), source: "user", quality: 1 });
         $("#health-value").value = "";
         toast("Medición guardada");
         this.load();
@@ -537,8 +537,8 @@ const Views = (() => {
       const person = $("#health-person").value.trim();
       try {
         const q = "?person_id=" + encodeURIComponent(person) + "&limit=30";
-        const t = await Net.api("GET", "/api/health/trend/" + encodeURIComponent(metric) + q);
-        const r = await Net.api("GET", "/api/health/measurements?metric=" + encodeURIComponent(metric) + "&person_id=" + encodeURIComponent(person) + "&limit=20");
+        const t = await Net.api("GET", "/api/v1/health/trend/" + encodeURIComponent(metric) + q);
+        const r = await Net.api("GET", "/api/v1/health/measurements?metric=" + encodeURIComponent(metric) + "&person_id=" + encodeURIComponent(person) + "&limit=20");
         const unit = r.measurements[0]?.unit || $("#health-unit").value || "";
         $("#health-latest").textContent = t.latest == null ? "—" : Number(t.latest).toFixed(2) + " " + unit;
         $("#health-mean").textContent = t.mean == null ? "—" : Number(t.mean).toFixed(2) + " " + unit;
@@ -572,12 +572,12 @@ const Views = (() => {
       });
       $("#det-save").addEventListener("click", () => {
         if (!this.current) return toast("no hay detección activa", true);
-        Net.api("POST", "/api/memories", { type: this.current.kind === "person" ? "person" : "object", content: `Visto: ${this.current.label} (${(this.current.confidence * 100) | 0}%)`, source: "vision", confidence: this.current.confidence, tags: ["visual", this.current.kind] })
+        Net.api("POST", "/api/v1/memories", { type: this.current.kind === "person" ? "person" : "object", content: `Visto: ${this.current.label} (${(this.current.confidence * 100) | 0}%)`, source: "vision", confidence: this.current.confidence, tags: ["visual", this.current.kind] })
           .then(() => toast("Guardado como memoria visual 📸"));
       });
       $("#det-star").addEventListener("click", () => {
         if (!this.current) return;
-        Net.api("POST", "/api/memories", { type: "episodic", content: `Momento importante: ${this.current.label}`, source: "vision", confidence: .95, tags: ["importante"], pinned: true }).then(() => toast("Marcado como importante ⭐"));
+        Net.api("POST", "/api/v1/memories", { type: "episodic", content: `Momento importante: ${this.current.label}`, source: "vision", confidence: .95, tags: ["importante"], pinned: true }).then(() => toast("Marcado como importante ⭐"));
       });
       $("#det-ignore").addEventListener("click", () => {
         this.dets = this.dets.filter((d) => d.id !== this.current?.id); this.current = null; this.render(); toast("Detección ignorada");
@@ -603,7 +603,7 @@ const Views = (() => {
         fd.append("name", name.trim());
         fd.append("consent", "true");
         try {
-          const r = await fetch("/api/vision/people/enroll", { method: "POST", body: fd });
+          const r = await fetch("/api/v1/vision/people/enroll", { method: "POST", body: fd });
           const body = await r.json().catch(() => ({}));
           if (!r.ok) return toast(body.detail || "No pude aprender ese rostro", true);
           toast("Perfil local creado con consentimiento: " + body.profile.name);
@@ -613,7 +613,7 @@ const Views = (() => {
     },
     async loadPeople() {
       try {
-        const data = await Net.api("GET", "/api/vision/people");
+        const data = await Net.api("GET", "/api/v1/vision/people");
         const box = $("#face-profiles");
         if (!data.profiles.length) {
           box.innerHTML = '<p class="empty">sin perfiles locales</p>';
@@ -627,7 +627,7 @@ const Views = (() => {
         Icons.hydrate(box);
         $("[data-face-del]", box).forEach((b) => b.addEventListener("click", async () => {
           if (!confirm("¿Eliminar este perfil facial local?")) return;
-          await Net.api("DELETE", "/api/vision/people/" + encodeURIComponent(b.dataset.faceDel));
+          await Net.api("DELETE", "/api/v1/vision/people/" + encodeURIComponent(b.dataset.faceDel));
           toast("Perfil facial eliminado");
           this.loadPeople();
         }));
@@ -680,7 +680,7 @@ const Views = (() => {
         this.uploadBusy = true;
         const fd = new FormData(); fd.append("frame", blob, "frame.jpg");
         try {
-          const r = await fetch("/api/vision/observe", { method: "POST", body: fd });
+          const r = await fetch("/api/v1/vision/observe", { method: "POST", body: fd });
           if (!r.ok && r.status !== 409) console.warn("vision", await r.text());
         } catch (e) { console.warn("vision observe", e); }
         finally { this.uploadBusy = false; }
@@ -831,7 +831,7 @@ const Views = (() => {
       $("#task-new").addEventListener("click", () => this.form(null));
     },
     async load() {
-      const { tasks: list } = await Net.api("GET", "/api/tasks");
+      const { tasks: list } = await Net.api("GET", "/api/v1/tasks");
       this.list = list;
       $("#task-list").innerHTML = list.length ? list.map((t) => `
         <div class="task ${t.status === "done" ? "done" : ""}" data-id="${t.id}">
@@ -860,11 +860,11 @@ const Views = (() => {
       });
     },
     async action(a, t) {
-      if (a === "toggle") await Net.api("PUT", `/api/tasks/${t.id}`, { status: t.status === "done" ? "pending" : "done" });
-      if (a === "pause") await Net.api("PUT", `/api/tasks/${t.id}`, { status: t.status === "paused" ? "pending" : "paused" });
-      if (a === "retry") await Net.api("PUT", `/api/tasks/${t.id}`, { status: "running" });
+      if (a === "toggle") await Net.api("PUT", `/api/v1/tasks/${t.id}`, { status: t.status === "done" ? "pending" : "done" });
+      if (a === "pause") await Net.api("PUT", `/api/v1/tasks/${t.id}`, { status: t.status === "paused" ? "pending" : "paused" });
+      if (a === "retry") await Net.api("PUT", `/api/v1/tasks/${t.id}`, { status: "running" });
       if (a === "edit") return this.form(t);
-      if (a === "del" && confirm("¿Borrar tarea?")) await Net.api("DELETE", `/api/tasks/${t.id}`);
+      if (a === "del" && confirm("¿Borrar tarea?")) await Net.api("DELETE", `/api/v1/tasks/${t.id}`);
       this.load();
     },
     form(t) {
@@ -887,7 +887,7 @@ const Views = (() => {
         if (!title) return toast("falta el título", true);
         const sched = ($("#tf-date").value && $("#tf-time").value) ? new Date($("#tf-date").value + "T" + $("#tf-time").value).getTime() / 1000 : (t?.scheduled_at || 0);
         const body = { title, description: $("#tf-desc").value.trim(), room: $("#tf-room").value, repeat: $("#tf-repeat").value, scheduled_at: sched };
-        if (isNew) await Net.api("POST", "/api/tasks", body); else await Net.api("PUT", `/api/tasks/${t.id}`, body);
+        if (isNew) await Net.api("POST", "/api/v1/tasks", body); else await Net.api("PUT", `/api/v1/tasks/${t.id}`, body);
         md.close(); toast(isNew ? "Tarea creada ✅" : "Tarea actualizada"); this.load();
       };
     },
@@ -932,26 +932,26 @@ const Views = (() => {
     mount() {
       if (this.mounted) return; this.mounted = true;
       $("#upd-check").addEventListener("click", async () => {
-        const r = await Net.api("POST", "/api/updates/check", {});
+        const r = await Net.api("POST", "/api/v1/updates/check", {});
         if (!r.available.length) { $("#upd-list").innerHTML = `<p class="empty">No hay proveedor de actualizaciones configurado.</p>`; return; }
         $("#upd-list").innerHTML = r.available.map((u) => `
           <div class="upd">${Icons.svg("sparkle")}<span>${esc(u.name)}</span><span class="kind">${u.kind}</span>
           <button class="btn sm btn-primary" data-n="${esc(u.name)}">instalar</button></div>`).join("");
         $$("#upd-list [data-n]").forEach((b) => b.addEventListener("click", async () => {
-          await Net.api("POST", "/api/updates/install", { name: b.dataset.n });
+          await Net.api("POST", "/api/v1/updates/install", { name: b.dataset.n });
           b.outerHTML = `<span style="color:var(--green);font-size:11px">instalado ✓</span>`; toast("Actualización aplicada");
         }));
       });
-      $("#bk-create").addEventListener("click", async () => { await Net.api("POST", "/api/backups", {}); toast("Backup creado 💾"); this.loadBackups(); });
+      $("#bk-create").addEventListener("click", async () => { await Net.api("POST", "/api/v1/backups", {}); toast("Backup creado 💾"); this.loadBackups(); });
       $("#load-voice").addEventListener("click", async () => {
-        const st = await Net.api("GET", "/api/audio/status");
+        const st = await Net.api("GET", "/api/v1/audio/status");
         const html = '<div class="kv"><label>Piper</label><b>' + (st.tts_available ? "disponible" : "no configurado") + '</b></div>' +
           '<div class="kv"><label>whisper.cpp</label><b>' + (st.stt_available ? "disponible" : "no configurado") + '</b></div>' +
           '<p class="hint">Las rutas se configuran en Ajustes > Hardware / ROS 2 o mediante .env.</p>';
         modal("Voz local", html);
       });
       $("#load-model").addEventListener("click", async () => {
-        const st = await Net.api("GET", "/api/models");
+        const st = await Net.api("GET", "/api/v1/models");
         const providers = (st.providers || []).map((p) => esc(p.name) + " · " + esc(p.model || "")).join(" → ") || "ninguno";
         const html = '<div class="kv"><label>Último proveedor</label><b>' + esc(st.last_provider) + '</b></div>' +
           '<div class="kv"><label>Proveedores</label><b>' + providers + '</b></div>' +
@@ -973,19 +973,19 @@ const Views = (() => {
           <label class="switch"><input type="checkbox" data-m="${m.id}" ${m.enabled ? "checked" : ""}><span></span></label>
         </div>`).join("");
       $$("#mod-list input").forEach((inp) => inp.addEventListener("change", async () => {
-        await Net.api("POST", `/api/modules/${inp.dataset.m}/toggle`, { on: inp.checked });
+        await Net.api("POST", `/api/v1/modules/${inp.dataset.m}/toggle`, { on: inp.checked });
         toast(`Módulo ${inp.checked ? "activado" : "desactivado"}`);
       }));
       this.loadBackups();
     },
     async loadBackups() {
       try {
-        const { backups } = await Net.api("GET", "/api/backups");
+        const { backups } = await Net.api("GET", "/api/v1/backups");
         $("#bk-list").innerHTML = backups.length ? backups.map((b) => `
           <li>${Icons.svg("save")}<span>${b.name}</span><span style="color:var(--txt-faint)">${(b.size / 1024).toFixed(1)} KB</span>
           <button class="btn sm btn-ghost x" data-n="${b.name}">restore</button></li>`).join("") : `<li class="empty">sin backups aún</li>`;
         $$("#bk-list [data-n]").forEach((b) => b.addEventListener("click", async () => {
-          await Net.api("POST", "/api/backups/restore", { name: b.dataset.n }); toast("Backup restaurado ↺");
+          await Net.api("POST", "/api/v1/backups/restore", { name: b.dataset.n }); toast("Backup restaurado ↺");
         }));
       } catch (e) { /* silencioso */ }
     },
@@ -1043,7 +1043,7 @@ const Views = (() => {
             else cur = (cur[part] ||= {});
           });
         });
-        await Net.api("PUT", `/api/settings/${this.cur}`, patch);
+        await Net.api("PUT", `/api/v1/settings/${this.cur}`, patch);
         toast("Configuración guardada ⚙️");
       };
     },
@@ -1056,7 +1056,7 @@ const Views = (() => {
       if (this.mounted) return; this.mounted = true;
       $$("[data-purge]").forEach((b) => b.addEventListener("click", () => this.purge(b.dataset.purge)));
       $("#pv-save").addEventListener("click", async () => {
-        await Net.api("PUT", "/api/settings/privacy", {
+        await Net.api("PUT", "/api/v1/settings/privacy", {
           private_mode: $("#pv-private").checked,
           retention_days: +$("#pv-ret").value || 180,
           restricted_zones: $("#pv-zones").value.split(",").map((x) => x.trim()).filter(Boolean),
@@ -1073,7 +1073,7 @@ const Views = (() => {
       if (mode === "type") body.type = $("#pv-type").value;
       if (mode === "person") body.person = $("#pv-person").value;
       if (mode === "before") body.timestamp = new Date($("#pv-date").value).getTime() / 1000;
-      const r = await Net.api("POST", "/api/privacy/purge", body);
+      const r = await Net.api("POST", "/api/v1/privacy/purge", body);
       toast(`${r.deleted} memorias borradas`);
       memory.load(); this.loadSensitive();
     },
@@ -1092,7 +1092,7 @@ const Views = (() => {
     },
     async loadSensitive() {
       try {
-        const { logs } = await Net.api("GET", "/api/logs?sensitive=true&limit=40");
+        const { logs } = await Net.api("GET", "/api/v1/logs?sensitive=true&limit=40");
         $("#sens-list").innerHTML = logs.map((l) => `<div class="sens">${esc(l.human)}<time>${fmtDT(l.ts)} · ${esc(l.module)}</time></div>`).join("") || `<p class="empty">sin acciones sensibles registradas</p>`;
       } catch (e) { }
     },
@@ -1114,7 +1114,7 @@ const Views = (() => {
     },
     async load() {
       const lv = $("#log-level").value;
-      const { logs } = await Net.api("GET", `/api/logs?limit=200&level=${lv}`);
+      const { logs } = await Net.api("GET", `/api/v1/logs?limit=200&level=${lv}`);
       this.last = logs;
       if (this.mode === "human") {
         $("#log-human").innerHTML = logs.map((l) => `

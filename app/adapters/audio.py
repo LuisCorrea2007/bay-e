@@ -12,14 +12,34 @@ import subprocess
 import tempfile
 
 from app.core.guardian import GUARDIAN
+from app.core import db
 
 
 class AudioAdapter:
     def __init__(self) -> None:
         self.whisper_bin = os.getenv("BAYE_WHISPER_BIN", "whisper-cli")
-        self.whisper_model = os.path.expanduser(os.getenv("BAYE_WHISPER_MODEL", "~/models/ggml-base.bin"))
         self.piper_bin = os.getenv("BAYE_PIPER_BIN", "piper")
-        self.piper_model = os.path.expanduser(os.getenv("BAYE_PIPER_MODEL", "~/models/es_ES.onnx"))
+
+    def _model_path(self, kind: str, env_name: str, default: str) -> str:
+        env = os.getenv(env_name)
+        if env:
+            return os.path.expanduser(env)
+        try:
+            hw = db.get_setting("settings:hardware", {}) or {}
+            path = (hw.get("model_paths") or {}).get(kind)
+            if path:
+                return os.path.expanduser(str(path))
+        except Exception:
+            pass
+        return os.path.expanduser(default)
+
+    @property
+    def whisper_model(self) -> str:
+        return self._model_path("stt", "BAYE_WHISPER_MODEL", "~/models/ggml-base.bin")
+
+    @property
+    def piper_model(self) -> str:
+        return self._model_path("tts", "BAYE_PIPER_MODEL", "~/models/es_ES.onnx")
 
     @property
     def stt_available(self) -> bool:

@@ -122,6 +122,7 @@ const Views = (() => {
       try {
         const r = await Net.api("POST", "/api/chat/send", { text });
         this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.speakOut(r.baye.content); this.scroll();
+        if (r.model?.ui_action) setTimeout(() => App.go(r.model.ui_action), 650);
       } catch (e) { toast("sin conexión con BAY-E", true); }
     },
     partial(m) {

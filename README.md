@@ -93,6 +93,17 @@ can provide, with permission:
 The phone does **not** create a second personality or memory database. It
 connects to the same local Core.
 
+Mobile access uses explicit device pairing. Open BAY-E locally at
+`http://127.0.0.1:8300`, go to **Dispositivos**, generate a six-digit one-time
+code, then enter that code in BAY-E Mobile. The code expires after five minutes.
+The Core stores only a SHA-256 hash of the resulting device token; the Android
+app stores the token using native secure storage backed by Android Keystore.
+A paired phone can be revoked from the same Devices panel.
+
+Camera, heartbeat, mobile chat and one-shot location endpoints require the
+paired device token. One-shot location is ephemeral by default and is not added
+to long-term memory unless an explicit `remember=true` request is made.
+
 To expose the Core to the phone on your LAN, set:
 
 ```env
@@ -101,6 +112,10 @@ BAYE_HOST=0.0.0.0
 
 Then enter the computer's LAN address in the Android app, for example
 `http://192.168.1.20:8300`.
+
+This HTTP LAN mode is for a trusted local network only. Do not expose the raw
+FastAPI port directly to the public Internet; remote access should use TLS plus
+a private tunnel/VPN or a dedicated authenticated relay.
 
 Build the mobile app:
 

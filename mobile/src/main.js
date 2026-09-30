@@ -105,8 +105,8 @@ async function speak(text){
     const r=await fetch(base('/api/audio/tts'),{method:'POST',headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{})},body:JSON.stringify({text})});
     if(r.ok){
       const blob=await r.blob(),url=URL.createObjectURL(blob),audio=new Audio(url);
-      await new Promise((resolve,reject)=>{audio.onended=resolve;audio.onerror=reject;audio.play().catch(reject)});
-      URL.revokeObjectURL(url);return;
+      try{await new Promise((resolve,reject)=>{audio.onended=resolve;audio.onerror=reject;audio.play().catch(reject)});return}
+      finally{URL.revokeObjectURL(url)}
     }
   }catch{}
   if(!('speechSynthesis'in window))return;

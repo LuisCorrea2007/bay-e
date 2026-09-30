@@ -15,11 +15,11 @@ from app.learning.conversation import SENSITIVE_TERMS
 
 
 _PATTERNS = [
-    (re.compile(r"\\bgracias\\b", re.I), "gratitude", "El usuario expresó agradecimiento.", 0.35, 0.7),
-    (re.compile(r"\\b(?:buenas noches|hasta mañana|nos vemos|hasta luego)\\b", re.I), "farewell", "La conversación terminó con una despedida.", 0.25, 0.25),
-    (re.compile(r"\\b(?:hola bay-?e|buenos días bay-?e|buenas tardes bay-?e)\\b", re.I), "greeting", "El usuario inició una interacción dirigiéndose a BAY-E.", 0.2, 0.2),
-    (re.compile(r"\\b(?:te enseñaré|te voy a enseñar|quiero enseñarte)\\b", re.I), "teaching", "El usuario manifestó intención de enseñar algo a BAY-E.", 0.55, 0.35),
-    (re.compile(r"\\b(?:hicimos|logramos|terminamos|completamos)\\b", re.I), "shared_progress", "El usuario mencionó progreso o una actividad realizada en conjunto.", 0.55, 0.45),
+    (re.compile(r"\bgracias\\b", re.I), "gratitude", "El usuario expresó agradecimiento.", 0.35, 0.7),
+    (re.compile(r"\b(?:buenas noches|hasta mañana|nos vemos|hasta luego)\b", re.I), "farewell", "La conversación terminó con una despedida.", 0.25, 0.25),
+    (re.compile(r"\b(?:hola bay-?e|buenos días bay-?e|buenas tardes bay-?e)\b", re.I), "greeting", "El usuario inició una interacción dirigiéndose a BAY-E.", 0.2, 0.2),
+    (re.compile(r"\b(?:te enseñaré|te voy a enseñar|quiero enseñarte)\b", re.I), "teaching", "El usuario manifestó intención de enseñar algo a BAY-E.", 0.55, 0.35),
+    (re.compile(r"\b(?:hicimos|logramos|terminamos|completamos)\b", re.I), "shared_progress", "El usuario mencionó progreso o una actividad realizada en conjunto.", 0.55, 0.45),
 ]
 
 

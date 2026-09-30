@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ..core import db
@@ -23,6 +23,7 @@ from ..core.ws import broadcast_state
 from ..core.events import BUS
 from ..core.guardian import GUARDIAN
 from ..adapters.audio import AUDIO
+from ..adapters.face_identity import FACE_IDENTITY
 from ..adapters.vision import VISION
 from ..autonomy.skills import SKILLS
 from ..autonomy.scheduler import next_occurrence
@@ -257,7 +258,16 @@ def settings_get():
 def settings_put(section: str, payload: dict = Body(...)):
     if section not in BAYE.s["settings"]:
         raise HTTPException(404, f"sección desconocida: {section}")
-    merged = {**BAYE.s["settings"][section], **payload}
+    def deep_merge(base: dict, patch: dict) -> dict:
+        out = dict(base)
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(out.get(key), dict):
+                out[key] = deep_merge(out[key], value)
+            else:
+                out[key] = value
+        return out
+
+    merged = deep_merge(BAYE.s["settings"][section], payload)
     BAYE.s["settings"][section] = merged
     db.set_setting(f"settings:{section}", merged)
     # efectos inmediatos
@@ -369,15 +379,19 @@ def privacy_purge(payload: dict = Body(...)):
         crit["before"] = float(payload.get("timestamp", 0))
     elif mode != "all":
         raise HTTPException(400, "modo desconocido")
+    face_deleted = 0
     if mode == "all":
         conn_n = len(db.export_memories())
-        db.delete_memories_by()          # borra todo (sin filtros)
+        db.delete_memories_by()          # borra toda la memoria textual
+        face_deleted = db.face_purge()   # los embeddings de identidad son memoria personal
     else:
         conn_n = db.delete_memories_by(**crit)
-    db.log("sensitive", "privacy", f"Purga de memoria ({mode}): {conn_n} elementos borrados", json.dumps(payload))
+        if mode == "person" and payload.get("person"):
+            face_deleted = db.face_delete_by_name(str(payload["person"]))
+    db.log("sensitive", "privacy", f"Purga de memoria ({mode}): {conn_n} memorias, {face_deleted} perfiles biométricos", json.dumps(payload))
     BAYE.s["last_memory"] = None
     broadcast_state()
-    return {"ok": True, "deleted": conn_n}
+    return {"ok": True, "deleted": conn_n, "face_profiles_deleted": face_deleted}
 
 
 # ================================================================ histórico emociones
@@ -435,6 +449,52 @@ async def vision_observe(frame: UploadFile = File(...)):
         BAYE.perceive_vision(det)
     broadcast_state()
     return observation
+
+
+@router.get("/vision/people")
+def vision_people():
+    profiles = []
+    for p in db.face_list_profiles():
+        profiles.append({
+            "id": p["id"], "name": p["name"], "consent_ts": p["consent_ts"],
+            "created_at": p["created_at"], "updated_at": p["updated_at"],
+        })
+    return {"available": FACE_IDENTITY.available, "profiles": profiles}
+
+
+@router.post("/vision/people/enroll")
+async def vision_people_enroll(
+    frame: UploadFile = File(...),
+    name: str = Form(...),
+    consent: bool = Form(False),
+):
+    if BAYE.s["private_mode"]:
+        raise HTTPException(403, "modo privado activo")
+    if not consent:
+        raise HTTPException(400, "se requiere consentimiento explícito")
+    raw = await frame.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "fotograma demasiado grande")
+    try:
+        profile = FACE_IDENTITY.enroll(name, raw, consent=True)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    db.log("sensitive", "vision", f"Perfil facial creado con consentimiento: {name}", f"id={profile['id']}")
+    public = {k: profile[k] for k in ("id","name","consent_ts","created_at","updated_at")}
+    return {"ok": True, "profile": public}
+
+
+@router.delete("/vision/people/{profile_id}")
+def vision_people_delete(profile_id: str):
+    ok = db.face_delete_profile(profile_id)
+    if not ok:
+        raise HTTPException(404, "perfil no encontrado")
+    db.log("sensitive", "vision", f"Perfil facial eliminado: {profile_id}", "")
+    return {"ok": True}
 
 
 @router.get("/audio/status")

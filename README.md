@@ -77,6 +77,20 @@ Mind entries are structured as restrictions, principles, goals, confirmed
 beliefs and notes. They are injected into BAY-E's conversational context. They
 do not expose or edit hidden chain-of-thought.
 
+## Companion learning with review
+
+BAY-E 2.2 adds a conservative learning inbox. Simple non-sensitive first-person
+preferences and routines can be detected during chat, but they are stored only
+as **pending candidates**. They do not become long-term memory until the user
+presses **Recordar** in the Aprendizaje panel.
+
+The deterministic extractor intentionally ignores sensitive categories such as
+passwords, financial information, precise home-address language, medical
+conditions, religion, political preferences and sexual orientation. Approval
+creates a normal memory tagged `learned` and `user-approved`; rejection deletes
+the proposal from the local review queue and leaves no memory. Editable personality rules remain subordinate to BAY-E's hard safety,
+privacy, sensor-truth and physical-action constraints.
+
 ## BAY-E Mobile
 
 The `mobile/` app is a Capacitor Android client for the same BAY-E Core. It
@@ -204,7 +218,7 @@ node --check static/js/views.js
 uvicorn main:app --reload
 ```
 
-Current stable software baseline: **v2.1.0**.
+Current development baseline: **v2.2.0**.
 
 ### 2.0 definition of done
 

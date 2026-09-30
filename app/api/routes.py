@@ -36,6 +36,7 @@ from ..cognition.model_router import MODELS
 from ..core.workflows import WORKFLOWS
 from ..health.service import record as health_record, trend as health_trend
 from ..learning.routines import discover as discover_routines
+from ..learning.conversation import propose as propose_learning
 from ..world.model import snapshot as world_snapshot
 
 router = APIRouter(prefix="/api")
@@ -88,6 +89,14 @@ def chat_history(thread_id: str = "default", limit: int = Query(300, ge=1, le=20
     return {"messages": db.list_messages(limit, thread_id=thread_id)}
 
 
+@router.get("/chat/search")
+def chat_search(q: str, limit: int = 50):
+    q = " ".join((q or "").split()).strip()
+    if len(q) < 2:
+        raise HTTPException(400, "búsqueda demasiado corta")
+    return {"results": db.search_messages(q, limit=max(1, min(200, limit)))}
+
+
 @router.put("/chat/messages/{msg_id}")
 def chat_message_update(msg_id: str, payload: dict = Body(...)):
     msg = db.update_message(msg_id, payload.get("content", ""))
@@ -114,6 +123,13 @@ async def chat_send(payload: dict = Body(...)):
     if not text:
         raise HTTPException(400, "mensaje vacío")
     msg = db.add_message("user", text, thread_id=thread_id)
+    learning_candidate = propose_learning(text, msg["id"])
+    if learning_candidate:
+        BUS.publish(
+            "learning.candidate",
+            {"id": learning_candidate["id"], "kind": learning_candidate["kind"]},
+            source="learning",
+        )
     BAYE.hear(text)
     BAYE.set_activity("thinking", 2.0)
     history = db.list_messages(120, thread_id=thread_id)
@@ -126,6 +142,7 @@ async def chat_send(payload: dict = Body(...)):
         "baye": bmsg,
         "thread": db.get_thread(thread_id),
         "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded},
+        "learning_candidate": learning_candidate,
     }
 
 
@@ -314,6 +331,36 @@ async def memories_import(file: UploadFile = File(...)):
     n = db.import_memories(items if isinstance(items, list) else items.get("memories", []))
     db.log("info", "memory", f"Importadas {n} memorias", "")
     return {"ok": True, "imported": n}
+
+
+# ================================================================ aprendizaje revisable
+@router.get("/learning/candidates")
+def learning_candidates(status: str = "pending", limit: int = Query(100, ge=1, le=500)):
+    return {"candidates": db.list_learning_candidates(status=status, limit=limit)}
+
+
+@router.post("/learning/candidates/{candidate_id}/resolve")
+def learning_candidate_resolve(candidate_id: str, payload: dict = Body(...)):
+    action = str(payload.get("action") or "").strip().lower()
+    if action not in {"approve", "reject"}:
+        raise HTTPException(400, "action debe ser approve o reject")
+    try:
+        item = db.resolve_learning_candidate(candidate_id, action)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if not item:
+        raise HTTPException(404, "candidato no encontrado")
+    if action == "approve" and item.get("memory_id"):
+        memory = db.get_memory(item["memory_id"])
+        if memory:
+            BAYE.s["last_memory"] = memory["content"]
+        db.log("info", "learning", "Aprendizaje aprobado por el usuario", f"id={candidate_id}")
+        BUS.publish("learning.approved", {"id": candidate_id, "memory_id": item["memory_id"]}, source="user")
+    else:
+        db.log("info", "learning", "Aprendizaje descartado por el usuario", f"id={candidate_id}")
+        BUS.publish("learning.rejected", {"id": candidate_id}, source="user")
+    broadcast_state()
+    return {"ok": True, "candidate": item, "memory": db.get_memory(item["memory_id"]) if item.get("memory_id") else None}
 
 
 # ================================================================ tareas

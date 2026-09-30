@@ -16,10 +16,12 @@
       <button class="side-close" id="side-close" aria-label="Cerrar">×</button>
     </div>
     <button class="new-chat" id="new-chat">＋ Nuevo chat</button>
-    <div class="side-label">CONVERSACIONES</div>
+    <div class="chat-search"><span>⌕</span><input id="chat-search" placeholder="Buscar conversaciones…" autocomplete="off"></div>
+    <div class="side-label" id="threads-label">CONVERSACIONES</div>
     <div class="threads" id="threads"></div>
     <div class="side-bottom">
       <button data-panel="mind">♡ <span>Corazón y mente</span></button>
+      <button data-panel="learning" id="learning-nav">✦ <span>Aprendizaje</span><b id="learning-badge" hidden>0</b></button>
       <button data-panel="memory">◇ <span>Memoria</span></button>
       <button data-panel="tasks">✓ <span>Tareas y rutinas</span></button>
       <button data-panel="world">⌂ <span>Casa y mundo</span></button>
@@ -90,6 +92,17 @@
         <div class="rule-row"><label>Prioridad <input id="rule-priority" type="number" min="0" max="100" value="70"></label><button type="submit">Agregar</button></div>
       </form>
       <div class="rule-list" id="rule-list"></div>
+    </section>
+
+    <section class="drawer-view" data-view="learning">
+      <div class="learning-hero">
+        <span>✦</span>
+        <div><small>APRENDIZAJE CON CONSENTIMIENTO</small><h3>BAY-E propone; tú decides.</h3><p>Los hechos detectados en conversación no entran en memoria permanente hasta que los apruebes. Categorías sensibles se excluyen del aprendizaje automático.</p></div>
+      </div>
+      <div class="learning-stats"><div><strong id="learning-pending">0</strong><small>PENDIENTES</small></div><div><strong id="learning-approved">0</strong><small>APROBADOS</small></div></div>
+      <div class="section-head"><small>BANDEJA</small><h3>Posibles recuerdos</h3></div>
+      <div class="card-list" id="learning-list"></div>
+      <p class="help">Aprobar crea una memoria marcada como <strong>user-approved</strong>. Rechazar descarta la propuesta; BAY-E no la tratará como un recuerdo confirmado.</p>
     </section>
 
     <section class="drawer-view" data-view="memory">

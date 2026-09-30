@@ -51,8 +51,8 @@ jobs:
               page.wait_for_timeout(300)
               page.fill("#prompt","recuerda que la prueba móvil funciona")
               page.click("#send-btn")
-              page.wait_for_function("document.querySelectorAll('.message').length >= 2", timeout=10000)
-              assert page.locator(".message").count() >= 2
+              page.wait_for_function("!document.querySelector('#send-btn').disabled && document.querySelectorAll('.message .bubble').length >= 2", timeout=10000)
+              assert page.locator(".message .bubble").count() >= 2
               page.locator(".message.user .message-tools [data-act=edit]").last.click()
               page.fill("#edit-text","recuerda que la prueba móvil funciona correctamente")
               page.click("#edit-save")
@@ -64,6 +64,25 @@ jobs:
               page.wait_for_timeout(400)
               assert page.locator(".rule-card").count() >= 1
               page.screenshot(path=str(out/"baye-heart-mind.png"), full_page=True)
+              page.click("#drawer-close")
+              page.fill("#prompt","Me gusta el color turquesa de prueba")
+              page.click("#send-btn")
+              page.wait_for_function("!document.querySelector('#send-btn').disabled && document.querySelectorAll('.message .bubble').length >= 4", timeout=10000)
+              page.click("[data-panel=learning]")
+              page.wait_for_timeout(300)
+              assert page.locator(".learning-card").count() >= 1
+              assert "turquesa" in page.locator(".learning-card p").first.inner_text().lower()
+              page.locator(".learning-card [data-a=approve]").first.click()
+              page.wait_for_timeout(350)
+              assert page.locator(".learning-card").count() == 0
+              page.screenshot(path=str(out/"baye-learning.png"), full_page=True)
+              page.click("#drawer-close")
+              page.fill("#chat-search","turquesa")
+              page.wait_for_timeout(500)
+              assert page.locator(".search-hit").count() >= 1
+              page.screenshot(path=str(out/"baye-chat-search.png"), full_page=True)
+              page.fill("#chat-search","")
+              page.wait_for_timeout(250)
               page.click("[data-panel=control]")
               page.wait_for_timeout(200)
               page.click("[data-move=forward]")

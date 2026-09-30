@@ -87,8 +87,8 @@ presses **Recordar** in the Aprendizaje panel.
 The deterministic extractor intentionally ignores sensitive categories such as
 passwords, financial information, precise home-address language, medical
 conditions, religion, political preferences and sexual orientation. Approval
-creates a normal memory tagged `learned` and `user-approved`; rejection leaves
-no memory. Editable personality rules remain subordinate to BAY-E's hard safety,
+creates a normal memory tagged `learned` and `user-approved`; rejection deletes
+the proposal from the local review queue and leaves no memory. Editable personality rules remain subordinate to BAY-E's hard safety,
 privacy, sensor-truth and physical-action constraints.
 
 ## BAY-E Mobile

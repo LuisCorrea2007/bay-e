@@ -85,7 +85,7 @@ def handle_client_msg(msg: dict, emit) -> None:
     t = msg.get("type")
     if t == "command":
         ack = BAYE.command(msg.get("cmd"), msg.get("payload"))
-        emit(ack)
+        emit({"type": "command_ack", **ack})
         broadcast_state()
     elif t == "chat":
         text = (msg.get("text") or "").strip()

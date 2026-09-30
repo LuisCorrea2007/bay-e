@@ -7,13 +7,14 @@ Router único montado bajo /api. Cada sección es una función con prefijo claro
 Diseñado para que los módulos reales (visión, ROS2, TTS) sustituyan solo el
 interior de las funciones sin cambiar el contrato HTTP.
 """
+import ipaddress
 import json
 import time
 import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ..core import db
@@ -24,6 +25,7 @@ from ..core.events import BUS
 from ..core.guardian import GUARDIAN
 from ..core.diagnostics import snapshot as diagnostics_snapshot
 from ..core.privacy import enforce_retention
+from ..core.mobile_auth import create_pairing_code, claim_pairing_code, token_hash, verify_token
 from ..adapters.audio import AUDIO
 from ..adapters.face_identity import FACE_IDENTITY
 from ..adapters.vision import VISION
@@ -712,16 +714,77 @@ def privacy_enforce_retention():
     return {"ok": True, **result}
 
 # ================================================================ nodos móviles
+def _loopback_request(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host in {"localhost", "testclient"}
+
+
+def _require_mobile(request: Request, node_id: str) -> dict:
+    auth = request.headers.get("authorization", "")
+    scheme, _, token = auth.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(401, "dispositivo no autenticado", headers={"WWW-Authenticate": "Bearer"})
+    record = db.get_mobile_auth(node_id)
+    if not record or bool(record.get("revoked")) or not verify_token(token, record.get("token_hash", "")):
+        raise HTTPException(401, "credencial móvil inválida o revocada", headers={"WWW-Authenticate": "Bearer"})
+    return record
+
+
 @router.get("/mobile/nodes")
 def mobile_nodes():
     return {"nodes": db.list_mobile_nodes()}
 
 
+@router.post("/mobile/pair/start")
+def mobile_pair_start(request: Request, payload: dict = Body(default={})):
+    """Genera un código efímero. Solo la consola abierta en el propio Core puede pedirlo."""
+    if not _loopback_request(request):
+        raise HTTPException(403, "genera el código desde la consola local de BAY-E")
+    pairing = create_pairing_code(int(payload.get("ttl_seconds", 300)))
+    db.log("sensitive", "mobile", "Código de emparejamiento móvil generado", f"expires_at={pairing['expires_at']}")
+    return {"ok": True, **pairing}
+
+
+@router.post("/mobile/pair/claim")
+def mobile_pair_claim(payload: dict = Body(...)):
+    node_id = str(payload.get("id") or "").strip()
+    code = str(payload.get("code") or "").strip()
+    if not node_id or not code:
+        raise HTTPException(400, "id y código son obligatorios")
+    token = claim_pairing_code(code)
+    if not token:
+        raise HTTPException(401, "código inválido, vencido o ya utilizado")
+    node = db.pair_mobile_node(
+        node_id,
+        name=str(payload.get("name") or "Teléfono BAY-E")[:80],
+        platform=str(payload.get("platform") or "android")[:30],
+        token_hash=token_hash(token),
+    )
+    db.log("sensitive", "mobile", "Dispositivo móvil emparejado", f"id={node_id}")
+    BUS.publish("mobile.paired", {"id": node_id}, source="mobile")
+    return {"ok": True, "token": token, "node": node, "core": {"version": APP_VERSION}}
+
+
+@router.delete("/mobile/nodes/{node_id}")
+def mobile_node_revoke(node_id: str, request: Request):
+    if not _loopback_request(request):
+        raise HTTPException(403, "revoca dispositivos desde la consola local de BAY-E")
+    if not db.revoke_mobile_node(node_id):
+        raise HTTPException(404, "dispositivo no encontrado")
+    db.log("sensitive", "mobile", "Acceso móvil revocado", f"id={node_id}")
+    BUS.publish("mobile.revoked", {"id": node_id}, source="user")
+    return {"ok": True}
+
+
 @router.post("/mobile/heartbeat")
-def mobile_heartbeat(payload: dict = Body(...)):
+def mobile_heartbeat(request: Request, payload: dict = Body(...)):
     node_id = (payload.get("id") or "").strip()
     if not node_id:
         raise HTTPException(400, "id de dispositivo requerido")
+    _require_mobile(request, node_id)
     capabilities = payload.get("capabilities") or {}
     telemetry = payload.get("telemetry") or {}
     node = db.upsert_mobile_node(
@@ -739,9 +802,58 @@ def mobile_heartbeat(payload: dict = Body(...)):
     return {"ok": True, "node": node, "core": {"version": APP_VERSION, "private_mode": BAYE.s["private_mode"]}}
 
 
+@router.get("/mobile/chat/history")
+def mobile_chat_history(
+    request: Request,
+    node_id: str,
+    thread_id: str = "default",
+    limit: int = Query(100, ge=1, le=500),
+):
+    _require_mobile(request, node_id)
+    return {"messages": db.list_messages(limit, thread_id=thread_id)}
+
+
+@router.post("/mobile/chat/send")
+async def mobile_chat_send(request: Request, payload: dict = Body(...)):
+    node_id = str(payload.get("node_id") or "").strip()
+    if not node_id:
+        raise HTTPException(400, "node_id requerido")
+    _require_mobile(request, node_id)
+    safe_payload = dict(payload)
+    safe_payload.pop("node_id", None)
+    return await chat_send(safe_payload)
+
+
+@router.post("/mobile/location")
+def mobile_location(request: Request, payload: dict = Body(...)):
+    """Ubicación de una sola lectura; no se convierte en memoria salvo petición explícita."""
+    node_id = str(payload.get("node_id") or "").strip()
+    _require_mobile(request, node_id)
+    try:
+        lat = float(payload["lat"])
+        lon = float(payload["lon"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "lat y lon válidos son obligatorios")
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(400, "coordenadas fuera de rango")
+    remember = bool(payload.get("remember", False))
+    BUS.publish("mobile.location", {"id": node_id, "lat": lat, "lon": lon, "remember": remember}, source="mobile")
+    memory = None
+    if remember:
+        memory = db.add_memory(
+            type="spatial",
+            content=f"Ubicación compartida desde {node_id}: {lat:.5f}, {lon:.5f}",
+            source="sensor",
+            confidence=0.95,
+            tags=["mobile", "location", "user-approved"],
+        )
+    return {"ok": True, "remembered": bool(memory), "memory_id": memory["id"] if memory else None}
+
+
 @router.post("/mobile/vision")
-async def mobile_vision(node_id: str = Form(...), frame: UploadFile = File(...)):
+async def mobile_vision(request: Request, node_id: str = Form(...), frame: UploadFile = File(...)):
     """Usa la cámara del teléfono como ojo remoto de BAY-E."""
+    _require_mobile(request, node_id)
     if BAYE.s["private_mode"]:
         raise HTTPException(403, "modo privado activo")
     raw = await frame.read()
@@ -759,3 +871,4 @@ async def mobile_vision(node_id: str = Form(...), frame: UploadFile = File(...))
     BUS.publish("mobile.vision", {"id": node_id, "detections": len(observation.get("detections", []))}, source="mobile")
     broadcast_state()
     return observation
+

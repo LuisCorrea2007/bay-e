@@ -19,6 +19,14 @@ class ChatMindMobileTests(unittest.TestCase):
         self.assertFalse(any(x["id"] == m["id"] for x in db.list_messages(thread_id=t["id"])))
         self.assertTrue(db.delete_thread(t["id"]))
 
+    def test_chat_search_finds_message_and_thread(self):
+        marker = "buscar-" + str(time.time_ns())
+        t = db.create_thread("Chat buscable")
+        m = db.add_message("user", "contenido " + marker, thread_id=t["id"])
+        hits = db.search_messages(marker)
+        self.assertTrue(any(x["id"] == m["id"] and x["thread_id"] == t["id"] for x in hits))
+        self.assertTrue(db.delete_thread(t["id"]))
+
     def test_mind_rule_crud(self):
         r = db.add_mind_rule("restriction", "No inventar acciones físicas.", priority=95)
         self.assertTrue(r["enabled"])

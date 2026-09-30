@@ -44,6 +44,25 @@ function renderMessage(m){
 function thinking(on){let e=$("#thinking");if(on&&!e){e=document.createElement("article");e.id="thinking";e.className="message baye";e.innerHTML='<div class="message-head"><div class="avatar">BE</div><strong>BAY-E</strong></div><div class="thinking"><i></i><i></i><i></i></div>';$("#messages").append(e);scrollBottom()}if(!on&&e)e.remove()}
 
 async function loadThreads(){const r=await api("GET","/api/chat/threads");App.threads=r.threads||[];$("#threads").innerHTML="";for(const t of App.threads){const row=document.createElement("div");row.className="thread "+(t.id===App.thread?"active":"");row.innerHTML=`<button class="thread-main">${esc(t.title)}</button><button class="thread-menu">⋯</button>`;row.querySelector(".thread-main").onclick=()=>selectThread(t.id);row.querySelector(".thread-menu").onclick=async()=>{const a=prompt("Renombrar chat. Déjalo vacío para borrar:",t.title);if(a===null)return;if(a.trim())await api("PUT","/api/chat/threads/"+t.id,{title:a.trim()});else if(t.id!=="default"&&confirm("¿Borrar este chat?")){await api("DELETE","/api/chat/threads/"+t.id);if(App.thread===t.id)App.thread="default"}await loadThreads();await loadMessages()};$("#threads").append(row)}}
+async function searchChats(q){
+  q=(q||"").trim();
+  if(q.length<2){$("#threads-label").textContent="CONVERSACIONES";return loadThreads()}
+  try{
+    const r=await api("GET","/api/chat/search?q="+encodeURIComponent(q)+"&limit=60"),root=$("#threads");
+    $("#threads-label").textContent="RESULTADOS";
+    root.innerHTML="";
+    const seen=new Set();
+    for(const x of r.results||[]){
+      const key=x.thread_id+"|"+x.id;if(seen.has(key))continue;seen.add(key);
+      const row=document.createElement("button");row.className="search-hit";
+      row.innerHTML=`<strong>${esc(x.thread_title||"BAY-E")}</strong><span>${esc(x.content)}</span><small>${new Date(x.created_at*1000).toLocaleString()}</small>`;
+      row.onclick=async()=>{await selectThread(x.thread_id);$("#chat-search").value="";$("#threads-label").textContent="CONVERSACIONES"};
+      root.append(row);
+    }
+    if(!root.children.length)root.innerHTML='<div class="search-empty">No encontré mensajes con ese texto.</div>';
+  }catch{toast("No pude buscar en las conversaciones")}
+}
+
 async function selectThread(id){App.thread=id;await loadThreads();await loadMessages();const t=App.threads.find(x=>x.id===id);$("#thread-title").textContent=t?.title||"BAY-E";$("#sidebar").classList.remove("open")}
 async function newThread(){const r=await api("POST","/api/chat/threads",{title:"Nuevo chat"});App.thread=r.thread.id;await loadThreads();await loadMessages();$("#prompt").focus()}
 async function loadMessages(){const r=await api("GET","/api/chat/history?thread_id="+encodeURIComponent(App.thread)+"&limit=500");$("#messages").innerHTML="";for(const m of r.messages||[])renderMessage(m);setEmpty();scrollBottom()}
@@ -135,6 +154,7 @@ function setupSpeech(){const SR=window.SpeechRecognition||window.webkitSpeechRec
 document.addEventListener("DOMContentLoaded",async()=>{
   App.faces.main=Face.create($("#face-main"));App.faces.mind=Face.create($("#face-mind"),{small:true});
   $("#new-chat").onclick=newThread;$("#home-btn").onclick=()=>selectThread("default");$("#menu-btn").onclick=()=>$("#sidebar").classList.add("open");$("#side-close").onclick=()=>$("#sidebar").classList.remove("open");
+  let searchTimer=0;$("#chat-search").oninput=e=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>searchChats(e.target.value),180)};
   $("#mind-btn").onclick=()=>openDrawer("mind");$$("[data-panel]").forEach(b=>b.onclick=()=>openDrawer(b.dataset.panel));$("#drawer-close").onclick=()=>$("#drawer").classList.remove("open");$$("[data-prompt]").forEach(b=>b.onclick=()=>{if(b.closest(".drawer"))$("#drawer").classList.remove("open");send(b.dataset.prompt)});
   $("#pair-mobile-btn").onclick=async()=>{try{const r=await api("POST","/api/mobile/pair/start",{ttl_seconds:300});$("#pair-code-value").textContent=r.code;$("#pair-code-display").hidden=false;const end=Number(r.expires_at||0)*1000;$("#pair-code-expiry").textContent="Caduca a las "+new Date(end).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});toast("Código listo · úsalo una sola vez")}catch(e){toast("Genera el código abriendo BAY-E en 127.0.0.1")}};
   $("#send-btn").onclick=()=>send();$("#prompt").oninput=grow;$("#prompt").onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send()}};

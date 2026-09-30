@@ -27,6 +27,7 @@ from app.autonomy.scheduler import SCHEDULER
 from app.cognition.conversation import respond as conversation_respond
 from app.learning.routines import strongest as strongest_routine
 from app.adapters.robot import ROBOT
+from app.core.privacy import enforce_retention
 from .events import BUS
 from .guardian import GUARDIAN
 from .safety import SAFETY
@@ -88,6 +89,7 @@ class BayeBrain:
         self.s = self._initial_state()
         self._last_hist_push = 0.0
         self._last_learning_scan = 0.0
+        self._last_privacy_maintenance = 0.0
 
     # ------------------------------------------------------------ init
     def _initial_state(self) -> dict:
@@ -634,6 +636,16 @@ class BayeBrain:
             pattern = strongest_routine()
             if pattern and float(pattern.get("confidence", 0)) >= 0.6:
                 s["learning"] = pattern["description"]
+
+        # mantenimiento de privacidad/retención (máximo una vez por hora)
+        if now - self._last_privacy_maintenance > 3600:
+            self._last_privacy_maintenance = now
+            try:
+                days = int(s["settings"]["privacy"].get("retention_days", 180))
+                enforce_retention(days)
+                GUARDIAN.report("privacy", "ok", f"retention_days={days}")
+            except Exception as exc:
+                GUARDIAN.report("privacy", "degraded", repr(exc))
 
         # histórico para gráficas (cada ~20 s) ----------------------------------
         if now - self._last_hist_push > 20:

@@ -25,6 +25,9 @@ from .config import APP_VERSION, DEFAULT_MODULES, DEFAULT_SETTINGS
 from app.autonomy.engine import AUTONOMY
 from app.autonomy.scheduler import SCHEDULER
 from app.cognition.conversation import respond as conversation_respond
+from app.cognition.model_router import ModelReply
+from app.core.diagnostics import snapshot as diagnostics_snapshot
+from app.world.model import snapshot as world_snapshot
 from app.learning.routines import strongest as strongest_routine
 from app.adapters.robot import ROBOT
 from app.core.privacy import enforce_retention
@@ -663,8 +666,125 @@ class BayeBrain:
         except Exception:
             pass
 
+    def _chat_operational_action(self, text: str):
+        """Execute explicit high-trust robot/system commands from conversation.
+
+        This layer is deterministic. A language model cannot bypass SafetyGovernor.
+        """
+        raw = (text or "").strip()
+        t = raw.lower()
+        e = self.s["emotions"]
+
+        if re.fullmatch(r"(estado|estado del sistema|diagnóstico|diagnostico|cómo estás|como estas)[?.! ]*", t):
+            d = diagnostics_snapshot()
+            robot = d["robot"]
+            models = d["models"]
+            provider = models.get("last_provider", "fallback")
+            hw = "conectado" if robot.get("connected") else "sin cuerpo conectado"
+            guardian = d["guardian"].get("overall", "unknown")
+            txt = (
+                f"Estoy {self.s['mode_label'] if 'mode_label' in self.s else MODE_LABELS[self.s['mode']]}. "
+                f"Cerebro: {provider}. Hardware: {hw}. Guardian: {guardian}. "
+                f"Curiosidad {int(e['curiosity']*100)}%, energía {int(e['energy']*100)}%."
+            )
+            return txt, "curious", ModelReply(txt, "skill", "system.status")
+
+        if re.fullmatch(r"(qué sientes|que sientes|cómo te sientes|como te sientes|emociones)[?.! ]*", t):
+            txt = (
+                f"Ahora mismo: ánimo {int(e['mood']*100)}%, curiosidad {int(e['curiosity']*100)}%, "
+                f"energía {int(e['energy']*100)}%, sociabilidad {int(e['sociability']*100)}%, "
+                f"preocupación {int(e['worry']*100)}% y aburrimiento {int(e['boredom']*100)}%."
+            )
+            return txt, "happy" if e["mood"] >= .6 else "curious", ModelReply(txt, "skill", "emotion.status",
+                ui_action={"type": "navigate", "view": "heart"})
+
+        if re.fullmatch(r"(qué ves|que ves|qué estás viendo|que estas viendo|mira alrededor)[?.! ]*", t):
+            recent = list(self.s.get("_recent_dets", []))[-8:]
+            if recent:
+                labels = ", ".join(dict.fromkeys(str(x.get("label", "algo")) for x in recent))
+                txt = f"Mis detecciones confirmadas más recientes son: {labels}."
+            else:
+                world = world_snapshot()
+                entities = world.get("entities", [])[:8]
+                if entities:
+                    txt = "No tengo una imagen reciente, pero mi modelo del mundo contiene: " + ", ".join(
+                        f"{x['kind']} {x['label']}" for x in entities
+                    ) + "."
+                else:
+                    txt = "No tengo una cámara aportando observaciones confirmadas ahora mismo."
+            return txt, "curious", ModelReply(txt, "skill", "vision.status",
+                ui_action={"type": "navigate", "view": "vision"})
+
+        if re.fullmatch(r"(detente|para|frena|stop|quieto)[!. ]*", t):
+            self.command("move", {"dir": "stop"})
+            self.s["mode"] = "idle"
+            txt = "Detenido. La orden de parada siempre tiene prioridad."
+            return txt, "attentive", ModelReply(txt, "skill", "robot.stop")
+
+        mode_patterns = [
+            (r"(explora|explora la casa|ve a explorar)[!. ]*", "explore", "explorar"),
+            (r"(patrulla|patrulla la casa)[!. ]*", "patrol", "patrullar"),
+            (r"(sígueme|sigueme|ven conmigo)[!. ]*", "follow", "seguirte"),
+            (r"(descansa|duerme|reposo)[!. ]*", "rest", "descansar"),
+        ]
+        for pattern, mode, label in mode_patterns:
+            if re.fullmatch(pattern, t):
+                ack = self.command("set_mode", {"mode": mode})
+                if ack.get("blocked"):
+                    txt = f"Quiero {label}, pero mi cuerpo físico o navegación todavía no están disponibles."
+                    return txt, "curious", ModelReply(txt, "skill", "robot.mode", degraded=True)
+                txt = f"Entendido. Paso a modo {label}."
+                return txt, "excited", ModelReply(txt, "skill", "robot.mode",
+                    ui_action={"type": "navigate", "view": "control"})
+
+        if re.fullmatch(r"(vuelve a la base|regresa a la base|ve a cargar|a cargar)[!. ]*", t):
+            ack = self.command("return_base", {})
+            if ack.get("blocked"):
+                txt = "No puedo navegar a una base real hasta que el cuerpo y Nav2 estén conectados."
+                return txt, "curious", ModelReply(txt, "skill", "robot.dock", degraded=True)
+            txt = "He enviado el objetivo seguro de regreso a la base."
+            return txt, "attentive", ModelReply(txt, "skill", "robot.dock")
+
+        m = re.fullmatch(r"(activa|desactiva)\s+(?:la\s+)?autonomía[!. ]*", t)
+        if m:
+            on = m.group(1) == "activa"
+            self.command("toggle_autonomy", {"on": on})
+            txt = f"Autonomía {'activada' if on else 'desactivada'}."
+            return txt, "curious", ModelReply(txt, "skill", "autonomy.toggle")
+
+        m = re.fullmatch(r"(activa|desactiva)\s+(?:el\s+)?modo privado[!. ]*", t)
+        if m:
+            on = m.group(1) == "activa"
+            self.command("private_mode", {"on": on})
+            txt = f"Modo privado {'activado' if on else 'desactivado'}."
+            return txt, "attentive", ModelReply(txt, "skill", "privacy.toggle",
+                ui_action={"type": "navigate", "view": "privacy"})
+
+        emotion_names = {
+            "energía": "energy", "energia": "energy", "curiosidad": "curiosity",
+            "aburrimiento": "boredom", "sociabilidad": "sociability",
+            "atención": "attention", "atencion": "attention", "confianza": "trust",
+            "preocupación": "worry", "preocupacion": "worry", "cansancio": "fatigue",
+            "ánimo": "mood", "animo": "mood",
+        }
+        m = re.fullmatch(r"(?:pon|ajusta|cambia)\s+(?:mi\s+)?([a-záéíóúñ]+)\s+(?:a|al)\s+(\d{1,3})\s*%[!. ]*", t)
+        if m and m.group(1) in emotion_names:
+            pct = max(0, min(100, int(m.group(2))))
+            key = emotion_names[m.group(1)]
+            self.command("adjust_emotion", {"key": key, "value": pct / 100})
+            label = EMO_LABELS_ES[key]
+            txt = f"{label} ajustada a {pct}% en modo manual."
+            return txt, "curious", ModelReply(txt, "skill", "emotion.adjust",
+                ui_action={"type": "navigate", "view": "heart"})
+
+        return None
+
     async def generate_reply(self, text: str):
-        """Generate a reply using local model routing + confirmed memory/world context."""
+        """Generate a reply using safe chat actions, model routing and confirmed context."""
+        operational = self._chat_operational_action(text)
+        if operational:
+            return operational
+
         model_reply, created_memory = await conversation_respond(
             text,
             state=self.snapshot(),
@@ -779,6 +899,8 @@ class BayeBrain:
         self.set_activity("speaking", max(2.0, len(reply_text) / 12))
         emit({"type": "indicator", "value": "speaking"})
         emit({"type": "model", "provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded})
+        if model_reply.ui_action:
+            emit({"type": "ui_action", "action": model_reply.ui_action})
 
         bmsg = db.add_message("baye", reply_text, emotion=emotion)
         # tipado progresivo sincronizado con el estado de habla

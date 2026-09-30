@@ -176,9 +176,15 @@ function openDrawer(name){App.panel=name;$("#drawer").classList.add("open");$$("
 
 async function command(cmd,payload={}){try{const r=await api("POST","/api/command",{cmd,payload});if(r.blocked)toast("Bloqueado por seguridad: "+(r.reason||"acción no disponible"));else toast("Comando aceptado");await refreshState();return r}catch{toast("No pude ejecutar el comando")}}
 function normalizedSpeech(text){return String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9\s-]/g," ").replace(/\s+/g," ").trim()}
+function wakePattern(){
+  const word=normalizedSpeech(voiceWord())||"bay-e",compact=word.replace(/[\s-]/g,"");
+  const forms=[word,word.replace(/-/g," "),compact];
+  if(compact==="baye")forms.push("bay e","bai e","bai-e","baie");
+  return new RegExp("\\b(?:"+[...new Set(forms.filter(Boolean))].join("|")+")\\b");
+}
 function handleWakeTranscript(transcript){
   const raw=String(transcript||"").trim(),norm=normalizedSpeech(raw);if(!norm)return;
-  const match=norm.match(/\b(?:bay[\s-]?e|baye|bai[\s-]?e)\b/);
+  const match=norm.match(wakePattern());
   if(match){
     App.voice.armedUntil=Date.now()+8000;
     const rawMatch=raw.match(/\b(?:bay[\s-]?e|baye|bai[\s-]?e)\b/i);

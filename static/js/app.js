@@ -60,3 +60,22 @@ document.addEventListener("DOMContentLoaded",async()=>{
  $("#edit-cancel").onclick=()=>$("#edit-modal").hidden=true;$("#edit-save").onclick=async()=>{if(!App.editing)return;await api("PUT","/api/chat/messages/"+App.editing.id,{content:$("#edit-text").value});$("#edit-modal").hidden=true;App.editing=null;await loadMessages();toast("Mensaje actualizado")};
  setupSpeech();await loadThreads();if(!App.threads.some(t=>t.id===App.thread))App.thread=App.threads[0]?.id||"default";await loadMessages();await refreshState();setInterval(refreshState,2500);
 });
+
+/* Companion UI shell interactions */
+document.addEventListener("DOMContentLoaded",()=>{
+  const scrim=document.querySelector("#sidebar-scrim");
+  const sidebar=document.querySelector("#sidebar");
+  if(scrim) scrim.addEventListener("click",()=>sidebar?.classList.remove("open"));
+  document.addEventListener("keydown",e=>{
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){
+      e.preventDefault();
+      if(typeof newThread==="function") newThread();
+    }
+    if(e.key==="Escape"){
+      sidebar?.classList.remove("open");
+      document.querySelector("#drawer")?.classList.remove("open");
+      const modal=document.querySelector("#edit-modal");
+      if(modal && !modal.hidden) modal.hidden=true;
+    }
+  });
+});

@@ -15,7 +15,7 @@ from a desktop companion into a real home robot without replacing its mind.
 - WebSocket live state/event stream
 - persistent SQLite chat, memories, tasks, settings, emotion history and world data
 - episodic/semantic/person/object/spatial/routine memory CRUD
-- local-first model router: llama.cpp -> Ollama -> deterministic fallback
+- hybrid model router: OpenAI Responses API -> llama.cpp -> Ollama -> deterministic fallback
 - memory-aware and world-aware conversation
 - dynamic emotional/drives engine with persistence across restarts
 - autonomous goal proposals without fake physical execution
@@ -58,15 +58,19 @@ start.bat
 
 Then open http://127.0.0.1:8300.
 
-No local LLM is required to boot. Without llama.cpp/Ollama, BAY-E uses a
-deterministic fallback instead of inventing an intelligent answer.
+No model service is required to boot. BAY-E prefers OpenAI when `OPENAI_API_KEY`
+is configured server-side, then falls back to llama.cpp, Ollama and finally a
+deterministic safe responder.
+
+Never place an API key in browser JavaScript or commit it to Git. Copy
+`.env.example` to `.env` and configure `OPENAI_API_KEY` locally.
 
 See [docs/SETUP.md](docs/SETUP.md) for local AI, camera, voice and ROS 2 setup.
 
 ## Architecture
 
 ```
-UI / live face
+Chat-first UI / live face
       |
  REST + WebSocket
       |

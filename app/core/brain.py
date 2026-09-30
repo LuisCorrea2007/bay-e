@@ -27,6 +27,8 @@ from app.autonomy.scheduler import SCHEDULER
 from app.cognition.conversation import respond as conversation_respond
 from app.learning.routines import strongest as strongest_routine
 from app.adapters.robot import ROBOT
+from app.core.diagnostics import snapshot as diagnostics_snapshot
+from app.world.model import snapshot as world_snapshot
 from app.core.privacy import enforce_retention
 from .events import BUS
 from .guardian import GUARDIAN
@@ -664,7 +666,81 @@ class BayeBrain:
             pass
 
     async def generate_reply(self, text: str):
-        """Generate a reply using local model routing + confirmed memory/world context."""
+        """Generate a reply and execute safe chat-native robot functions."""
+        t = (text or "").strip().lower()
+
+        # High-trust operational commands remain deterministic: the language
+        # model may explain them, but cannot bypass the Safety Governor.
+        if re.search(r"\b(activa|enciende)\s+(la\s+)?autonom[ií]a\b", t):
+            self.command("toggle_autonomy", {"on": True})
+            model_reply = type("Reply", (), {"text": "Autonomía activada. Puedo proponer objetivos, pero cualquier acción física seguirá pasando por seguridad.", "provider": "skill", "model": "autonomy.toggle", "degraded": False})()
+            return model_reply.text, "curious", model_reply
+
+        if re.search(r"\b(desactiva|apaga)\s+(la\s+)?autonom[ií]a\b", t):
+            self.command("toggle_autonomy", {"on": False})
+            model_reply = type("Reply", (), {"text": "Autonomía desactivada. Esperaré instrucciones y mantendré solo mis procesos internos.", "provider": "skill", "model": "autonomy.toggle", "degraded": False})()
+            return model_reply.text, "neutral_face", model_reply
+
+        if re.search(r"\b(c[oó]mo te sientes|estado emocional|tus emociones)\b", t):
+            e = self.s["emotions"]
+            txt = (
+                f"Ahora mismo: energía {int(e['energy']*100)}%, curiosidad {int(e['curiosity']*100)}%, "
+                f"ánimo {int(e['mood']*100)}%, atención {int(e['attention']*100)}% y aburrimiento {int(e['boredom']*100)}%. "
+                f"Mi estado visible es {self.expression(time.time())['emotion']}."
+            )
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "emotion.read", "degraded": False})()
+            return txt, "curious", model_reply
+
+        if re.search(r"\b(diagn[oó]stico|estado del sistema|revisa tu sistema|c[oó]mo est[aá] tu sistema)\b", t):
+            d = diagnostics_snapshot()
+            txt = (
+                f"Guardian: {d['guardian']['overall']}. Modelo: {d['models'].get('last_provider','fallback')}. "
+                f"Visión OpenCV: {'lista' if d['vision']['opencv'] else 'offline'}. "
+                f"STT local: {'listo' if d['audio']['stt'] else 'offline'}. "
+                f"TTS local: {'listo' if d['audio']['tts'] else 'offline'}. "
+                f"Robot físico: {'conectado' if d['robot']['connected'] else 'no conectado'}."
+            )
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "diagnostics.read", "degraded": False})()
+            return txt, "thinking", model_reply
+
+        if re.search(r"\b(qu[eé] ves|qu[eé] est[aá]s viendo|mira alrededor)\b", t):
+            recent = list(self.s.get("_recent_dets", []))[-8:]
+            if not recent:
+                txt = "No tengo una observación visual real reciente. Cuando la cámara esté conectada, podré describir únicamente lo que detecte de verdad."
+            else:
+                labels = ", ".join(f"{x.get('label','algo')} ({int(float(x.get('confidence',0))*100)}%)" for x in recent)
+                txt = f"Mis detecciones reales recientes son: {labels}."
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "vision.read", "degraded": False})()
+            return txt, "curious", model_reply
+
+        if re.search(r"\b(qu[eé] sabes de la casa|mundo conocido|qu[eé] conoces del entorno)\b", t):
+            world = world_snapshot()
+            entities = world.get("entities", [])[:12]
+            if not entities:
+                txt = "Mi modelo del hogar todavía está vacío. Necesito observaciones reales para construirlo."
+            else:
+                txt = "En mi modelo del mundo tengo: " + "; ".join(f"{x['kind']}: {x['label']}" for x in entities) + "."
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "world.read", "degraded": False})()
+            return txt, "curious", model_reply
+
+        if re.search(r"\b(lista|muestra|dime)\s+(mis\s+)?tareas\b", t):
+            tasks = [x for x in db.list_tasks() if x.get("status") not in ("done", "cancelled")]
+            txt = "No tienes tareas pendientes." if not tasks else "Tareas pendientes: " + "; ".join(x["title"] for x in tasks[:10]) + "."
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "task.list", "degraded": False})()
+            return txt, "neutral_face", model_reply
+
+        if re.search(r"\b(duerme|descansa|entra en (modo )?reposo)\b", t):
+            self.command("set_mode", {"mode": "rest"})
+            txt = "Entendido. Entro en reposo y mantengo disponibles mis funciones esenciales."
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "mode.rest", "degraded": False})()
+            return txt, "sleepy", model_reply
+
+        if re.search(r"\b(despierta|sal del reposo)\b", t):
+            self.command("wake", {})
+            txt = "Ya estoy despierto y atento."
+            model_reply = type("Reply", (), {"text": txt, "provider": "skill", "model": "mode.wake", "degraded": False})()
+            return txt, "happy", model_reply
+
         model_reply, created_memory = await conversation_respond(
             text,
             state=self.snapshot(),

@@ -79,3 +79,8 @@ button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}::
   .topbar{height:57px;flex-basis:57px}.mind-pill{padding:7px 9px}.mind-pill span{display:none}.presence{height:160px}.face-main{width:245px}.empty-state{justify-content:flex-start;padding-top:44px;padding-bottom:145px}.empty-state h1{font-size:28px}.empty-state p{font-size:12px;max-width:390px}.suggestions{grid-template-columns:1fr 1fr;gap:7px;margin-top:22px}.suggestions button{padding:11px}.suggestions small{font-size:8px}.messages{padding-top:18px}.bubble{font-size:13px}.composer{border-radius:19px}.mind-presence{grid-template-columns:125px 1fr}.mind-face{width:120px}
 }
 @media(max-width:390px){.suggestions{grid-template-columns:1fr}.suggestions button:nth-child(n+4){display:none}.presence{height:145px}.face-main{width:225px}}
+
+
+@media(max-width:820px){
+  .app:has(.sidebar.open) .sidebar-scrim{opacity:1;pointer-events:auto}
+}

@@ -17,6 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from jinja2 import Environment, FileSystemLoader
 
 from app.api.routes import router as api_router
@@ -36,6 +37,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=f"{APP_NAME} · Compañero Robótico", version=APP_VERSION, lifespan=lifespan)
+
+# Clientes móviles Capacitor usan un origen local propio. El Core continúa siendo
+# local; no se habilita CORS universal.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost",
+        "https://localhost",
+        "capacitor://localhost",
+        "ionic://localhost",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ------------------------------------------------------------------ estáticos
 app.mount("/static", StaticFiles(directory=ROOT_DIR / "static"), name="static")

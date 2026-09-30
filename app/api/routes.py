@@ -1,7 +1,7 @@
 """
 BAY-E · API REST modular.
 
-Router REST sin prefijo propio. main.py lo monta en /api/v1 y conserva /api como alias legado:
+Router REST estable montado en /api/v1. main.py conserva /api como alias legado mediante middleware:
   /state /chat /memories /tasks /settings /logs /vision /modules /privacy /updates /history
 
 Diseñado para que los módulos reales (visión, ROS2, TTS) sustituyan solo el
@@ -40,7 +40,7 @@ from ..learning.conversation import propose as propose_learning
 from ..memory.relationship import observe_user_turn
 from ..world.model import snapshot as world_snapshot
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1")
 
 
 # ================================================================ estado general

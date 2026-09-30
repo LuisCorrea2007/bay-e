@@ -79,6 +79,9 @@ const Views = (() => {
   /* ═══════════════════════ CHAT ═══════════════════════ */
   const chat = {
     pending: {}, // id -> nodo parcial
+    wakeRec: null,
+    wakeOn: false,
+    wakeArmedUntil: 0,
     mounted: false,
     mount() {
       if (this.mounted) return; this.mounted = true;
@@ -87,6 +90,7 @@ const Views = (() => {
       $("#qc-send").addEventListener("click", () => this.quick());
       $("#qc-text").addEventListener("keydown", (e) => { if (e.key === "Enter") this.quick(); });
       $("#chat-mic").addEventListener("click", () => this.mic());
+      $("#chat-wake").addEventListener("click", () => this.toggleWake());
       Net.on("chat", (m) => {
         this.renderMsg(m.message, m.final);
         if (m.final && m.message?.role === "baye") this.speakOut(m.message.content);
@@ -199,6 +203,72 @@ const Views = (() => {
       const banner = $("#act-banner");
       if (v && map[v]) { $("#act-banner-txt").textContent = map[v]; banner.classList.add("show"); }
       else banner.classList.remove("show");
+    },
+    toggleWake() {
+      if (this.wakeOn) this.stopWake();
+      else this.startWake();
+    },
+    startWake() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return toast("Tu navegador no soporta escucha continua", true);
+      if (STATE?.private_mode) return toast("Desactiva el modo privado para usar escucha por nombre", true);
+      this.wakeOn = true;
+      $("#chat-wake").classList.add("on");
+      const rec = new SR();
+      this.wakeRec = rec;
+      rec.lang = "es-ES";
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.onstart = () => Net.command("sensor", { sensor: "mic", on: true });
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) continue;
+          const heard = e.results[i][0].transcript.trim();
+          const lower = heard.toLowerCase();
+          const wake = String(STATE?.settings?.audio?.wake_word || "bay-e").toLowerCase();
+          const alternatives = [wake, wake.replace("-", " "), "baye", "bay e"];
+          const hit = alternatives.find((w) => w && lower.includes(w));
+          if (hit) {
+            const idx = lower.indexOf(hit);
+            const after = heard.slice(idx + hit.length).replace(/^[,.:;!¿?\s-]+/, "").trim();
+            this.wakeArmedUntil = Date.now() + 9000;
+            this.indicator("listening");
+            if (after) {
+              $("#chat-input").value = after;
+              this.submit();
+              this.wakeArmedUntil = 0;
+            }
+          } else if (Date.now() < this.wakeArmedUntil && heard) {
+            $("#chat-input").value = heard;
+            this.submit();
+            this.wakeArmedUntil = 0;
+          }
+        }
+      };
+      rec.onerror = (e) => {
+        if (!["no-speech", "aborted"].includes(e.error)) console.warn("wake word", e.error);
+      };
+      rec.onend = () => {
+        if (!this.wakeOn) {
+          Net.command("sensor", { sensor: "mic", on: false });
+          return;
+        }
+        setTimeout(() => { try { rec.start(); } catch {} }, 400);
+      };
+      try { rec.start(); toast("Escucha por «" + (STATE?.settings?.audio?.wake_word || "bay-e") + "» activada"); }
+      catch { this.stopWake(); }
+    },
+    stopWake() {
+      this.wakeOn = false;
+      this.wakeArmedUntil = 0;
+      $("#chat-wake")?.classList.remove("on");
+      try { this.wakeRec?.stop(); } catch {}
+      this.wakeRec = null;
+      Net.command("sensor", { sensor: "mic", on: false });
+      this.indicator(null);
+    },
+    syncState(s) {
+      if (s?.private_mode && this.wakeOn) this.stopWake();
     },
     mic() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -513,6 +583,7 @@ const Views = (() => {
         this.dets = this.dets.filter((d) => d.id !== this.current?.id); this.current = null; this.render(); toast("Detección ignorada");
       });
       $("#face-enroll").addEventListener("click", () => this.enrollPerson());
+      this.loadPeople();
     },
     async enrollPerson() {
       if (!this.stream || !this.video || !this.canvas) return toast("Activa primero la cámara", true);
@@ -536,8 +607,31 @@ const Views = (() => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) return toast(body.detail || "No pude aprender ese rostro", true);
           toast("Perfil local creado con consentimiento: " + body.profile.name);
+          this.loadPeople();
         } catch (e) { toast("Error al enrolar la persona", true); }
       }, "image/jpeg", .86);
+    },
+    async loadPeople() {
+      try {
+        const data = await Net.api("GET", "/api/vision/people");
+        const box = $("#face-profiles");
+        if (!data.profiles.length) {
+          box.innerHTML = '<p class="empty">sin perfiles locales</p>';
+          return;
+        }
+        box.innerHTML = data.profiles.map((p) =>
+          '<div class="recent-row"><i data-icon="users"></i><div><label>' + esc(p.name) +
+          '</label><span>consentimiento registrado · ' + fmtDT(p.consent_ts) +
+          '</span></div><button class="btn sm danger" data-face-del="' + esc(p.id) + '">borrar</button></div>'
+        ).join("");
+        Icons.hydrate(box);
+        $("[data-face-del]", box).forEach((b) => b.addEventListener("click", async () => {
+          if (!confirm("¿Eliminar este perfil facial local?")) return;
+          await Net.api("DELETE", "/api/vision/people/" + encodeURIComponent(b.dataset.faceDel));
+          toast("Perfil facial eliminado");
+          this.loadPeople();
+        }));
+      } catch (e) { console.warn("face profiles", e); }
     },
     async startCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -1029,7 +1123,7 @@ const Views = (() => {
     Face.update(App.faceMain, s.expression);
     Face.update(App.faceMini, s.expression);
     // vistas
-    dashboard.refresh(s); heart.refresh(s); vision.refresh(s); control.refresh(s);
+    chat.syncState(s); dashboard.refresh(s); heart.refresh(s); vision.refresh(s); control.refresh(s);
     mind.refresh(s); homeMap.refresh(s); modules.refresh(s); settings.refresh(s); privacy.refresh(s);
     if ($("#view-memory").classList.contains("is-active")) memory.load();
   }

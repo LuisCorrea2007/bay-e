@@ -23,6 +23,8 @@ class Ros2RobotAdapter(RobotAdapter):
         self._battery: float | None = None
         self._charging = False
         self._room: str | None = None
+        self._emergency_stop = False
+        self._collision_clear = False
         self._node = None
         self._cmd_pub = None
         self._head_pub = None
@@ -35,7 +37,7 @@ class Ros2RobotAdapter(RobotAdapter):
             import rclpy
             from geometry_msgs.msg import Twist, Vector3
             from sensor_msgs.msg import BatteryState
-            from std_msgs.msg import Bool, String
+            from std_msgs.msg import Bool, String, Float32MultiArray
             try:
                 from rclpy.action import ActionClient
                 from nav2_msgs.action import NavigateToPose
@@ -53,6 +55,8 @@ class Ros2RobotAdapter(RobotAdapter):
             self._node = rclpy.create_node("baye_core")
             self._cmd_pub = self._node.create_publisher(Twist, "/cmd_vel", 10)
             self._head_pub = self._node.create_publisher(Vector3, "/baye/head_target", 10)
+            self._left_arm_pub = self._node.create_publisher(Float32MultiArray, "/baye/left_arm_target", 10)
+            self._right_arm_pub = self._node.create_publisher(Float32MultiArray, "/baye/right_arm_target", 10)
             self._nav_client = (
                 self._ActionClient(self._node, self._NavigateToPose, "navigate_to_pose")
                 if self._ActionClient and self._NavigateToPose else None
@@ -60,6 +64,8 @@ class Ros2RobotAdapter(RobotAdapter):
             self._node.create_subscription(Bool, "/baye/hardware_alive", self._alive_cb, 10)
             self._node.create_subscription(BatteryState, "/battery_state", self._battery_cb, 10)
             self._node.create_subscription(String, "/baye/current_room", self._room_cb, 10)
+            self._node.create_subscription(Bool, "/baye/emergency_stop", self._estop_cb, 10)
+            self._node.create_subscription(Bool, "/baye/collision_clear", self._collision_cb, 10)
             self._spin_thread = threading.Thread(target=rclpy.spin, args=(self._node,), daemon=True)
             self._spin_thread.start()
         except Exception:
@@ -77,9 +83,18 @@ class Ros2RobotAdapter(RobotAdapter):
     def _room_cb(self, msg) -> None:
         self._room = str(msg.data)
 
+    def _estop_cb(self, msg) -> None:
+        self._emergency_stop = bool(msg.data)
+
+    def _collision_cb(self, msg) -> None:
+        self._collision_clear = bool(msg.data)
+
     def telemetry(self) -> RobotTelemetry:
         connected = self.enabled and (time.time() - self._last_heartbeat) < 3.0
-        return RobotTelemetry(connected=connected, battery=self._battery, charging=self._charging, room=self._room)
+        return RobotTelemetry(
+            connected=connected, battery=self._battery, charging=self._charging, room=self._room,
+            emergency_stop=self._emergency_stop, collision_clear=self._collision_clear,
+        )
 
     def move(self, direction: str) -> dict[str, Any]:
         if not self.telemetry().connected:
@@ -119,3 +134,26 @@ class Ros2RobotAdapter(RobotAdapter):
         msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
         future = self._nav_client.send_goal_async(msg)
         return {"ok": True, "status": "submitted", "goal": {"x": goal["x"], "y": goal["y"], "yaw": yaw}, "future": bool(future)}
+
+    def arm(self, side: str, shoulder: float, elbow: float, gripper: float) -> dict[str, Any]:
+        if not self.telemetry().connected:
+            raise RuntimeError("ROS2 bridge has no live hardware heartbeat")
+        pub = self._left_arm_pub if side == "left" else self._right_arm_pub if side == "right" else None
+        if pub is None:
+            raise ValueError("side must be left or right")
+        from std_msgs.msg import Float32MultiArray
+        msg = Float32MultiArray()
+        msg.data = [
+            max(-1.0, min(1.0, float(shoulder))),
+            max(-1.0, min(1.0, float(elbow))),
+            max(0.0, min(1.0, float(gripper))),
+        ]
+        pub.publish(msg)
+        return {"ok": True, "side": side, "target": list(msg.data)}
+
+    def emergency_stop(self) -> dict[str, Any]:
+        # Publishing zero velocity is always safe; the MCU must also implement
+        # its own hardware E-stop independent from this software path.
+        if self._cmd_pub is not None:
+            self._cmd_pub.publish(self._Twist())
+        return {"ok": True, "stopped": True}

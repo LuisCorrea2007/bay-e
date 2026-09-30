@@ -435,6 +435,54 @@ const Views = (() => {
     },
   };
 
+  /* ═══════════════════════ SALUD / BIENESTAR ═══════════════════════ */
+  const health = {
+    mounted: false,
+    units: { heart_rate: "bpm", spo2: "%", temperature: "°C", respiratory_rate: "rpm", weight: "kg", custom: "" },
+    mount() {
+      if (this.mounted) return; this.mounted = true;
+      $("#health-metric").addEventListener("change", () => {
+        const m = $("#health-metric").value;
+        if (m !== "custom") $("#health-unit").value = this.units[m] || "";
+        this.load();
+      });
+      $("#health-save").addEventListener("click", () => this.save());
+      $("#health-person").addEventListener("change", () => this.load());
+    },
+    async save() {
+      const metric = $("#health-metric").value;
+      const value = Number($("#health-value").value);
+      const unit = $("#health-unit").value.trim();
+      if (!Number.isFinite(value) || !unit) return toast("Completa valor y unidad", true);
+      try {
+        await Net.api("POST", "/api/health/measurements", { metric, value, unit, person_id: $("#health-person").value.trim(), source: "user", quality: 1 });
+        $("#health-value").value = "";
+        toast("Medición guardada");
+        this.load();
+      } catch (e) { toast("No pude guardar la medición", true); }
+    },
+    async load() {
+      if (!$("#view-health").classList.contains("is-active")) return;
+      const metric = $("#health-metric").value;
+      const person = $("#health-person").value.trim();
+      try {
+        const q = "?person_id=" + encodeURIComponent(person) + "&limit=30";
+        const t = await Net.api("GET", "/api/health/trend/" + encodeURIComponent(metric) + q);
+        const r = await Net.api("GET", "/api/health/measurements?metric=" + encodeURIComponent(metric) + "&person_id=" + encodeURIComponent(person) + "&limit=20");
+        const unit = r.measurements[0]?.unit || $("#health-unit").value || "";
+        $("#health-latest").textContent = t.latest == null ? "—" : Number(t.latest).toFixed(2) + " " + unit;
+        $("#health-mean").textContent = t.mean == null ? "—" : Number(t.mean).toFixed(2) + " " + unit;
+        $("#health-delta").textContent = t.delta == null ? "—" : Number(t.delta).toFixed(2) + " " + unit;
+        $("#health-count").textContent = t.count || 0;
+        $("#health-notice").textContent = t.notice || "Sin suficientes muestras.";
+        if (!r.measurements.length) $("#health-recent").innerHTML = '<p class="empty">sin mediciones registradas</p>';
+        else {
+          $("#health-recent").innerHTML = r.measurements.map((m) => '<div class="recent-row">' + Icons.svg("pulse") + '<div><label>' + esc(m.metric) + '</label><span>' + Number(m.value).toFixed(2) + " " + esc(m.unit) + " · " + fmtDT(m.ts) + " · fuente " + esc(m.source) + '</span></div></div>').join("");
+          Icons.hydrate($("#health-recent"));
+        }
+      } catch (e) { console.warn("health", e); }
+    },
+  };
   /* ═══════════════════════ VISIÓN ═══════════════════════ */
   const vision = {
     dets: [],
@@ -935,5 +983,5 @@ const Views = (() => {
     if ($("#view-memory").classList.contains("is-active")) memory.load();
   }
 
-  return { get STATE() { return STATE; }, applyState, chat, memory, heart, vision, control, mind, tasks, homeMap, modules, settings, privacy, logs, dashboard, modal, toast, esc, fmtDT, fmtT, MEM_TYPES };
+  return { get STATE() { return STATE; }, applyState, chat, memory, heart, health, vision, control, mind, tasks, homeMap, modules, settings, privacy, logs, dashboard, modal, toast, esc, fmtDT, fmtT, MEM_TYPES };
 })();

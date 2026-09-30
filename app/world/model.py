@@ -57,6 +57,16 @@ def ingest_detection(det: dict[str, Any]) -> dict:
         kind=kind, label=label, room=room, source="vision",
         confidence=confidence, ts=float(det.get("ts", time.time())),
     )
+    if room and room != "unknown":
+        room_entity = upsert_entity(
+            "room", room, source="vision", confidence=min(0.95, max(0.6, confidence)),
+            attrs={"last_seen": float(det.get("ts", time.time()))},
+        )
+        relate(
+            entity["id"], "located_in", room_entity["id"],
+            source="vision", confidence=confidence,
+            attrs={"observed_at": float(det.get("ts", time.time()))},
+        )
     return entity
 
 

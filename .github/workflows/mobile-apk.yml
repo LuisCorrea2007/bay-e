@@ -65,13 +65,19 @@ jobs:
           script: |
             mkdir -p mobile/runtime
             adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
             adb shell am force-stop com.luiscorrea.baye
-            adb shell monkey -p com.luiscorrea.baye -c android.intent.category.LAUNCHER 1
+            adb shell am start -W -n com.luiscorrea.baye/.MainActivity | tee mobile/runtime/activity-start.txt
             sleep 8
             adb logcat -d > mobile/runtime/logcat.txt || true
             adb exec-out screencap -p > mobile/runtime/baye-mobile.png || true
             PID="$(adb shell pidof com.luiscorrea.baye | tr -d '\r')"
-            test -n "$PID"
+            if [ -z "$PID" ]; then
+              echo "BAY-E Mobile process exited after launch"
+              grep -E "AndroidRuntime|FATAL EXCEPTION|Process: com\.luiscorrea\.baye|Capacitor|chromium" mobile/runtime/logcat.txt | tail -n 220 || true
+              exit 1
+            fi
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity|com\.luiscorrea\.baye" | head -n 40 || true
             test -s mobile/runtime/baye-mobile.png
 
       - uses: actions/upload-artifact@v4

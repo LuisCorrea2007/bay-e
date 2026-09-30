@@ -37,6 +37,7 @@ from ..core.workflows import WORKFLOWS
 from ..health.service import record as health_record, trend as health_trend
 from ..learning.routines import discover as discover_routines
 from ..learning.conversation import propose as propose_learning
+from ..memory.relationship import observe_user_turn
 from ..world.model import snapshot as world_snapshot
 
 router = APIRouter(prefix="/api")
@@ -124,6 +125,9 @@ async def chat_send(payload: dict = Body(...)):
         raise HTTPException(400, "mensaje vacío")
     msg = db.add_message("user", text, thread_id=thread_id)
     learning_candidate = propose_learning(text, msg["id"])
+    relationship_event = None
+    if not BAYE.s.get("private_mode", False):
+        relationship_event = observe_user_turn(text, msg["id"])
     if learning_candidate:
         BUS.publish(
             "learning.candidate",
@@ -143,6 +147,7 @@ async def chat_send(payload: dict = Body(...)):
         "thread": db.get_thread(thread_id),
         "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded},
         "learning_candidate": learning_candidate,
+        "relationship_event": relationship_event,
     }
 
 
@@ -221,6 +226,12 @@ def mind_rules_delete(rule_id: str):
         raise HTTPException(404, "regla no encontrada")
     BUS.publish("mind.rule_deleted", {"id": rule_id}, source="user")
     return {"ok": True}
+
+
+@router.get("/relationship")
+def relationship_state():
+    """Continuidad visible sin afirmar conciencia o emociones biológicas."""
+    return db.relationship_summary(limit=30)
 
 
 @router.get("/mind/state")

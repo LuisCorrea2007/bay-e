@@ -440,6 +440,11 @@ def audio_status():
     return {"stt_available": AUDIO.stt_available, "tts_available": AUDIO.tts_available}
 
 
+@router.get("/health/measurements")
+def health_measurements(metric: str = "", person_id: str = "", limit: int = Query(50, ge=1, le=500)):
+    return {"measurements": db.health_list_measurements(metric=metric, person_id=person_id, limit=limit)}
+
+
 @router.post("/health/measurements")
 def health_measurement(payload: dict = Body(...)):
     if not payload.get("metric") or payload.get("value") is None or not payload.get("unit"):

@@ -11,7 +11,7 @@ to SQLite, logs, WebSocket state or the frontend.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 import urllib.error
@@ -29,6 +29,7 @@ class ModelReply:
     provider: str
     model: str
     degraded: bool = False
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 class Provider(Protocol):

@@ -128,6 +128,18 @@ CREATE TABLE IF NOT EXISTS health_measurements (
     ts REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_health_metric_ts ON health_measurements(metric, ts DESC);
+
+CREATE TABLE IF NOT EXISTS observations (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    room TEXT DEFAULT '',
+    source TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.5,
+    ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_observation_ts ON observations(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_observation_pattern ON observations(kind, label, room, ts DESC);
 """
 
 
@@ -609,6 +621,46 @@ def health_list_measurements(*, metric: str = "", person_id: str = "", limit: in
         sql += " AND metric=?"; args.append(metric)
     if person_id:
         sql += " AND person_id=?"; args.append(person_id)
+    sql += " ORDER BY ts DESC LIMIT ?"; args.append(limit)
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    return [dict(r) for r in rows]
+
+# ----------------------------------------------------------------- observations / routine learning
+def add_observation(*, kind: str, label: str, room: str = "", source: str = "sensor",
+                    confidence: float = 0.5, ts: Optional[float] = None) -> dict:
+    item = {
+        "id": "obs_" + uuid.uuid4().hex[:10],
+        "kind": kind,
+        "label": label,
+        "room": room,
+        "source": source,
+        "confidence": float(confidence),
+        "ts": float(ts or time.time()),
+    }
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO observations (id,kind,label,room,source,confidence,ts) VALUES (?,?,?,?,?,?,?)",
+            tuple(item[k] for k in ("id","kind","label","room","source","confidence","ts")),
+        )
+        conn.commit()
+        conn.close()
+    return item
+
+
+def list_observations(*, since: float = 0.0, kind: str = "", label: str = "",
+                      room: str = "", limit: int = 1000) -> list[dict]:
+    sql = "SELECT * FROM observations WHERE ts>=?"
+    args: list[Any] = [float(since)]
+    if kind:
+        sql += " AND kind=?"; args.append(kind)
+    if label:
+        sql += " AND label=?"; args.append(label)
+    if room:
+        sql += " AND room=?"; args.append(room)
     sql += " ORDER BY ts DESC LIMIT ?"; args.append(limit)
     with _LOCK:
         conn = _conn()

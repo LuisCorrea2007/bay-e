@@ -36,6 +36,14 @@ class Ros2RobotAdapter(RobotAdapter):
             from geometry_msgs.msg import Twist, Vector3
             from sensor_msgs.msg import BatteryState
             from std_msgs.msg import Bool, String
+            try:
+                from rclpy.action import ActionClient
+                from nav2_msgs.action import NavigateToPose
+                self._NavigateToPose = NavigateToPose
+                self._ActionClient = ActionClient
+            except Exception:
+                self._NavigateToPose = None
+                self._ActionClient = None
 
             if not rclpy.ok():
                 rclpy.init(args=None)
@@ -45,6 +53,10 @@ class Ros2RobotAdapter(RobotAdapter):
             self._node = rclpy.create_node("baye_core")
             self._cmd_pub = self._node.create_publisher(Twist, "/cmd_vel", 10)
             self._head_pub = self._node.create_publisher(Vector3, "/baye/head_target", 10)
+            self._nav_client = (
+                self._ActionClient(self._node, self._NavigateToPose, "navigate_to_pose")
+                if self._ActionClient and self._NavigateToPose else None
+            )
             self._node.create_subscription(Bool, "/baye/hardware_alive", self._alive_cb, 10)
             self._node.create_subscription(BatteryState, "/battery_state", self._battery_cb, 10)
             self._node.create_subscription(String, "/baye/current_room", self._room_cb, 10)
@@ -92,6 +104,18 @@ class Ros2RobotAdapter(RobotAdapter):
         return {"ok": True, "yaw": yaw, "pitch": pitch}
 
     def navigate(self, goal: dict[str, Any]) -> dict[str, Any]:
-        # Nav2 action client is intentionally a separate adapter: this core does
-        # not claim success until navigation feedback reports arrival.
-        raise NotImplementedError("Nav2 NavigateToPose adapter not connected yet")
+        if not self.telemetry().connected:
+            raise RuntimeError("ROS2 bridge has no live hardware heartbeat")
+        if self._nav_client is None or not self._nav_client.wait_for_server(timeout_sec=0.25):
+            raise RuntimeError("Nav2 navigate_to_pose action is unavailable")
+        import math
+        msg = self._NavigateToPose.Goal()
+        msg.pose.header.frame_id = str(goal.get("frame_id", "map"))
+        msg.pose.header.stamp = self._node.get_clock().now().to_msg()
+        msg.pose.pose.position.x = float(goal["x"])
+        msg.pose.pose.position.y = float(goal["y"])
+        yaw = float(goal.get("yaw", 0.0))
+        msg.pose.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.pose.orientation.w = math.cos(yaw / 2.0)
+        future = self._nav_client.send_goal_async(msg)
+        return {"ok": True, "status": "submitted", "goal": {"x": goal["x"], "y": goal["y"], "yaw": yaw}, "future": bool(future)}

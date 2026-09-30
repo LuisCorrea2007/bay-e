@@ -130,6 +130,11 @@
 
     <section class="drawer-view" data-view="devices">
       <p class="help">Teléfonos y futuros sensores comparten percepción con el mismo BAY-E Core; no crean otra personalidad.</p>
+      <div class="pair-console">
+        <div><small>EMPAREJAMIENTO SEGURO</small><strong>Autorizar un teléfono</strong><p>Genera un código de un solo uso y escríbelo en BAY-E Mobile.</p></div>
+        <button class="wide-btn" id="pair-mobile-btn">Generar código</button>
+        <div class="pair-code-display" id="pair-code-display" hidden><span id="pair-code-value">000000</span><small id="pair-code-expiry">Caduca en 5 min</small></div>
+      </div>
       <div class="card-list" id="device-list"></div>
     </section>
 

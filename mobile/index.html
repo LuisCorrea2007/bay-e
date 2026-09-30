@@ -38,9 +38,12 @@
     <dialog id="settings">
       <form method="dialog">
         <h2>Conectar con BAY-E Core</h2>
-        <label>URL local del Core<input id="core-url" placeholder="http://192.168.1.20:8300"></label>
-        <p>El teléfono y la computadora deben estar en la misma red local. La ubicación solo se comparte cuando pulsas el botón correspondiente.</p>
-        <div class="dialog-actions"><button value="cancel">Cancelar</button><button id="save-settings" value="default">Guardar</button></div>
+        <label>URL local del Core<input id="core-url" placeholder="http://192.168.1.20:8300" inputmode="url" autocomplete="off"></label>
+        <label>Código de emparejamiento<input id="pair-code" placeholder="000000" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+        <div class="pair-state"><span class="secure-dot"></span><strong id="pair-state">Pendiente de emparejar</strong></div>
+        <p>Genera el código desde la consola local de BAY-E. Es de un solo uso y caduca. El token resultante se guarda cifrado por el almacenamiento seguro del sistema.</p>
+        <p>La ubicación solo se comparte cuando pulsas su botón y, por defecto, no se guarda como memoria.</p>
+        <div class="dialog-actions"><button id="disconnect-btn" type="button" class="danger-link" hidden>Olvidar este teléfono</button><button value="cancel">Cancelar</button><button id="save-settings" value="default">Emparejar y guardar</button></div>
       </form>
     </dialog>
 

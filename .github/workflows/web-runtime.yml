@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feature/chat-mind-mobile
+      - feature/**
       - release/**
   workflow_dispatch:
 
@@ -40,7 +40,10 @@ jobs:
           with sync_playwright() as p:
               b=p.chromium.launch(headless=True)
               page=b.new_page(viewport={"width":1440,"height":950})
+              page.on("console", lambda msg: print("BROWSER", msg.type, msg.text))
+              page.on("pageerror", lambda exc: print("PAGEERROR", exc))
               page.goto("http://127.0.0.1:8300", wait_until="networkidle")
+              assert page.evaluate("typeof document.querySelector('#send-btn').onclick === 'function'")
               assert page.locator("#face-main .eye").count() == 2
               assert page.locator("#face-main .bridge").count() == 1
               assert page.locator("#face-main").inner_text().strip() == ""
@@ -48,7 +51,7 @@ jobs:
               page.wait_for_timeout(300)
               page.fill("#prompt","recuerda que la prueba móvil funciona")
               page.click("#send-btn")
-              page.wait_for_timeout(1800)
+              page.wait_for_function("document.querySelectorAll('.message').length >= 2", timeout=10000)
               assert page.locator(".message").count() >= 2
               page.locator(".message.user .message-tools [data-act=edit]").last.click()
               page.fill("#edit-text","recuerda que la prueba móvil funciona correctamente")
@@ -67,9 +70,19 @@ jobs:
               page.wait_for_timeout(250)
               assert "desconectado" in page.locator("#control-hardware").inner_text().lower()
               page.screenshot(path=str(out/"baye-control.png"), full_page=True)
+              page.click("[data-panel=devices]")
+              page.wait_for_timeout(200)
+              page.click("#pair-mobile-btn")
+              page.wait_for_timeout(250)
+              code=page.locator("#pair-code-value").inner_text().strip()
+              assert len(code) == 6 and code.isdigit()
+              page.screenshot(path=str(out/"baye-mobile-pairing.png"), full_page=True)
               b.close()
           PY
           python /tmp/test_ui.py
+      - name: Print BAY-E server log on failure
+        if: failure()
+        run: cat /tmp/baye.log || true
       - uses: actions/upload-artifact@v4
         with:
           name: BAY-E-web-runtime

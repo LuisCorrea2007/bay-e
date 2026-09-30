@@ -304,6 +304,29 @@
           </div>
         </div>
 
+        <div class="card">
+          <div class="card-h"><i data-icon="cpu"></i><h3>Brazos y pinzas</h3></div>
+          <p class="hint">Objetivos normalizados. Safety Governor y el microcontrolador conservan la autoridad final.</p>
+          <div class="arm-panel">
+            <div>
+              <b>Brazo izquierdo</b>
+              <div class="slider"><label>Hombro</label><input id="arm-l-shoulder" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Codo</label><input id="arm-l-elbow" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Pinza</label><input id="arm-l-gripper" type="range" min="0" max="100" value="0"></div>
+            </div>
+            <div>
+              <b>Brazo derecho</b>
+              <div class="slider"><label>Hombro</label><input id="arm-r-shoulder" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Codo</label><input id="arm-r-elbow" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Pinza</label><input id="arm-r-gripper" type="range" min="0" max="100" value="0"></div>
+            </div>
+          </div>
+          <div class="row2">
+            <button class="btn danger" id="robot-estop"><i data-icon="stop"></i>PARADA DE EMERGENCIA</button>
+            <button class="btn btn-ghost" id="robot-estop-clear"><i data-icon="check"></i>Liberar E-Stop</button>
+          </div>
+        </div>
+
         <div class="card modes-card">
           <div class="card-h"><i data-icon="compass"></i><h3>Modos</h3></div>
           <div class="mode-grid" id="mode-grid"></div>

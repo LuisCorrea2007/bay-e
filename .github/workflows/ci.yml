@@ -5,7 +5,8 @@ on:
     branches:
       - main
       - integration/**
-      - feature/**\n      - release/**
+      - feature/**
+      - release/**
   pull_request:
 
 jobs:

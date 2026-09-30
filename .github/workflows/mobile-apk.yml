@@ -11,7 +11,7 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -47,8 +47,43 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Smoke test APK in Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: |
+            mkdir -p mobile/runtime
+            adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am force-stop com.luiscorrea.baye
+            adb shell am start -W -n com.luiscorrea.baye/.MainActivity | tee mobile/runtime/activity-start.txt
+            sleep 8
+            adb logcat -d > mobile/runtime/logcat.txt || true
+            adb exec-out screencap -p > mobile/runtime/baye-mobile.png || true
+            adb shell pidof com.luiscorrea.baye | grep -Eq '[0-9]+' || (echo "BAY-E Mobile process exited after launch"; grep -E "AndroidRuntime|FATAL EXCEPTION|Process: com\.luiscorrea\.baye|Capacitor|chromium" mobile/runtime/logcat.txt | tail -n 220; exit 1)
+            adb shell dumpsys activity activities | grep -E "mResumedActivity|topResumedActivity|com\.luiscorrea\.baye" | head -n 40 || true
+            test -s mobile/runtime/baye-mobile.png
+
       - uses: actions/upload-artifact@v4
         with:
           name: BAY-E-Mobile-debug-apk
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: BAY-E-Mobile-emulator
+          path: mobile/runtime/
+          if-no-files-found: warn

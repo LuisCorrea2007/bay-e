@@ -149,6 +149,33 @@ CREATE TABLE IF NOT EXISTS face_profiles (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS chat_threads (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS mind_rules (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 50,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mobile_nodes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    platform TEXT NOT NULL DEFAULT 'android',
+    last_seen REAL NOT NULL,
+    capabilities TEXT NOT NULL DEFAULT '{}',
+    telemetry TEXT NOT NULL DEFAULT '{}'
+);
 """
 
 
@@ -161,12 +188,38 @@ def _conn() -> sqlite3.Connection:
 _INIT_DB_DONE = False
 
 
+def _column_names(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(r["name"]) for r in conn.execute("PRAGMA table_info(" + table + ")").fetchall()}
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Migraciones aditivas para bases locales existentes."""
+    cols = _column_names(conn, "messages")
+    if "thread_id" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN thread_id TEXT NOT NULL DEFAULT 'default'")
+    if "updated_at" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN updated_at REAL NOT NULL DEFAULT 0")
+        conn.execute("UPDATE messages SET updated_at=created_at WHERE updated_at=0")
+    if "deleted" not in cols:
+        conn.execute("ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+
+    now = time.time()
+    conn.execute(
+        "INSERT OR IGNORE INTO chat_threads (id,title,created_at,updated_at,archived) VALUES ('default','BAY-E',?,?,0)",
+        (now, now),
+    )
+    row = conn.execute("SELECT MAX(created_at) AS ts FROM messages WHERE thread_id='default'").fetchone()
+    if row and row["ts"]:
+        conn.execute("UPDATE chat_threads SET updated_at=? WHERE id='default'", (float(row["ts"]),))
+
+
 def init_db() -> None:
     """Crea esquema + siembra datos iniciales la primera vez."""
     global _INIT_DB_DONE
     with _LOCK:
         conn = _conn()
         conn.executescript(SCHEMA)
+        _migrate_schema(conn)
         conn.commit()
         first = conn.execute("SELECT COUNT(*) c FROM memories").fetchone()["c"] == 0
         conn.close()

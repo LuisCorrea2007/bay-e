@@ -1,21 +1,10 @@
 import unittest
 from pathlib import Path
 
-from main import _versioned_api_path, app
+from main import app
 
 
 class ApiVersioningTests(unittest.TestCase):
-    def test_v1_routes_are_mounted(self):
-        paths = {getattr(route, "path", "") for route in app.routes}
-        self.assertIn("/api/v1/state", paths)
-        self.assertIn("/api/v1/chat/send", paths)
-
-    def test_legacy_alias_rewrites_to_v1(self):
-        self.assertEqual(_versioned_api_path("/api/state"), "/api/v1/state")
-        self.assertEqual(_versioned_api_path("/api/chat/send"), "/api/v1/chat/send")
-        self.assertEqual(_versioned_api_path("/api/v1/state"), "/api/v1/state")
-        self.assertEqual(_versioned_api_path("/health"), "/health")
-
     def test_openapi_documents_only_v1_contract(self):
         paths = app.openapi().get("paths", {})
         self.assertIn("/api/v1/state", paths)

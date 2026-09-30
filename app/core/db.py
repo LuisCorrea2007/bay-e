@@ -479,7 +479,11 @@ def _touch_thread(thread_id: str, preview: str = "") -> None:
                 (thread_id, title, now, now),
             )
         else:
-            conn.execute("UPDATE chat_threads SET updated_at=? WHERE id=?", (now, thread_id))
+            if row["title"] == "Nuevo chat" and preview.strip():
+                title = preview.strip().replace("\n", " ")[:48]
+                conn.execute("UPDATE chat_threads SET title=?,updated_at=? WHERE id=?", (title, now, thread_id))
+            else:
+                conn.execute("UPDATE chat_threads SET updated_at=? WHERE id=?", (now, thread_id))
         conn.commit()
         conn.close()
 

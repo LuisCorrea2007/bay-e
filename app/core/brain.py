@@ -123,7 +123,7 @@ class BayeBrain:
             "last_event": "Sistema iniciado. Todo nominal.",
             "learning": random.choice(LEARNINGS),
             "doubt": None,
-            "context": "Casa tranquila. Nadie cerca.",
+            "context": "Núcleo activo. Aún no hay sensores ambientales conectados.",
             "memory_used": None,
             "next_decision": "Esperar instrucciones con atención amable.",
             "reason": "Modo inicio: observar y disponible.",
@@ -329,8 +329,11 @@ class BayeBrain:
             s["autonomy"] = bool(p.get("on", not s["autonomy"]))
             db.log("info", "control", f"Autonomía {'activada' if s['autonomy'] else 'desactivada'}", "")
         elif name == "return_base":
-            self.command("set_mode", {"mode": "charging"})
-            s["last_event"] = "Volviendo a la base de carga."
+            ack = self.command("set_mode", {"mode": "charging"})
+            if ack.get("blocked"):
+                s["last_event"] = "No puedo volver a una base física hasta que navegación y motores estén conectados."
+                return ack
+            s["last_event"] = "Navegación a la base solicitada."
         elif name == "set_emotion_mode":
             self.emotion_mode = "manual" if p.get("mode") == "manual" else "auto"
         elif name == "adjust_emotion":
@@ -536,7 +539,7 @@ class BayeBrain:
                 return out("Mmm… procesarlo me cuesta ahora. ¿Puedes repetirlo en un rato? Mi energía está baja.", "worried")
             return out(random.choice([
                 "Interesante pregunta. Déjame pensarlo… Creo que la respuesta depende de cómo te haga sentir.",
-                "No lo sé con certeza, pero puedo investigarlo y guardarlo en mi memoria. ¿Te parece?",
+                "No lo sé con certeza todavía. Prefiero decírtelo antes que inventar una respuesta.",
                 "Mi primera hipótesis: sí. Pero me gustaría observar un poco más antes de afirmarlo.",
             ]), "thinking")
 
@@ -544,7 +547,7 @@ class BayeBrain:
             return out(random.choice([
                 "Yo también te aprecio mucho. Cuidar de ti es mi propósito favorito.",
                 "¿Gracias yo? Contigo aprendo que los robots también podemos sonreír.",
-                "Ese cumplido subió mi ánimo un 200%. Lo guardaré como momento importante.",
+                "Eso me alegró mucho. Si quieres, podemos guardarlo como un recuerdo importante.",
             ]), "happy")
 
         if re.search(r"(estoy triste|mal|cansado|cansada|solo|sola|deprimido|ansiedad|miedo|preocupad)", t):
@@ -572,8 +575,8 @@ class BayeBrain:
 
         return out(random.choice([
             "Te escucho. Sigue… me gusta aprender de ti.",
-            "Hmm, interesante. Lo anotaré como contexto de nuestra conversación.",
-            "¿Sabías que mientras hablas, mis sensores se iluminan? Continúa, por favor.",
+            "Hmm, interesante. Puedo convertirlo en recuerdo si quieres conservarlo.",
+            "Te sigo con atención. Continúa, por favor.",
             "Estoy procesando. A veces solo necesito decir: gracias por compartirlo.",
         ]), "neutral_face")
 

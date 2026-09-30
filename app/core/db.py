@@ -140,6 +140,15 @@ CREATE TABLE IF NOT EXISTS observations (
 );
 CREATE INDEX IF NOT EXISTS idx_observation_ts ON observations(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_observation_pattern ON observations(kind, label, room, ts DESC);
+
+CREATE TABLE IF NOT EXISTS face_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    embedding TEXT NOT NULL,
+    consent_ts REAL NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
 """
 
 
@@ -667,3 +676,68 @@ def list_observations(*, since: float = 0.0, kind: str = "", label: str = "",
         rows = conn.execute(sql, args).fetchall()
         conn.close()
     return [dict(r) for r in rows]
+
+# ----------------------------------------------------------------- opt-in face identity profiles
+def face_upsert_profile(*, name: str, embedding: list[float], consent_ts: float) -> dict:
+    now = time.time()
+    with _LOCK:
+        conn = _conn()
+        old = conn.execute("SELECT id,created_at FROM face_profiles WHERE name=?", (name,)).fetchone()
+        if old:
+            fid = old["id"]
+            conn.execute(
+                "UPDATE face_profiles SET embedding=?,consent_ts=?,updated_at=? WHERE id=?",
+                (json.dumps(embedding), consent_ts, now, fid),
+            )
+        else:
+            fid = "face_" + uuid.uuid4().hex[:10]
+            conn.execute(
+                "INSERT INTO face_profiles (id,name,embedding,consent_ts,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                (fid, name, json.dumps(embedding), consent_ts, now, now),
+            )
+        conn.commit()
+        row = conn.execute("SELECT * FROM face_profiles WHERE id=?", (fid,)).fetchone()
+        conn.close()
+    out = dict(row)
+    out["embedding"] = json.loads(out["embedding"])
+    return out
+
+
+def face_list_profiles() -> list[dict]:
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute("SELECT * FROM face_profiles ORDER BY name").fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["embedding"] = json.loads(d["embedding"])
+        out.append(d)
+    return out
+
+
+def face_delete_profile(profile_id: str) -> bool:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM face_profiles WHERE id=?", (profile_id,)).rowcount
+        conn.commit()
+        conn.close()
+    return n > 0
+
+
+def face_delete_by_name(name: str) -> int:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM face_profiles WHERE name LIKE ?", (name,)).rowcount
+        conn.commit()
+        conn.close()
+    return n
+
+
+def face_purge() -> int:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM face_profiles").rowcount
+        conn.commit()
+        conn.close()
+    return n

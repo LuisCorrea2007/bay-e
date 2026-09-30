@@ -9,11 +9,12 @@ interior de las funciones sin cambiar el contrato HTTP.
 """
 import json
 import time
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ..core import db
 from ..core.brain import BAYE, EMO_KEYS, MODES
@@ -24,7 +25,9 @@ from ..core.guardian import GUARDIAN
 from ..adapters.audio import AUDIO
 from ..adapters.vision import VISION
 from ..autonomy.skills import SKILLS
+from ..cognition.agents import manifest as agent_manifest
 from ..cognition.model_router import MODELS
+from ..core.workflows import WORKFLOWS
 from ..health.service import record as health_record, trend as health_trend
 from ..world.model import snapshot as world_snapshot
 
@@ -314,9 +317,7 @@ def updates_check():
 
 @router.post("/updates/install")
 def updates_install(payload: dict = Body(...)):
-    name = payload.get("name", "")
-    db.log("info", "updates", f"Actualización instalada (simulada): {name}", "")
-    return {"ok": True, "installed": name}
+    raise HTTPException(409, "No hay proveedor de actualizaciones configurado. BAY-E no simulará una instalación.")
 
 
 @router.post("/backups")
@@ -457,3 +458,47 @@ def health_measurement(payload: dict = Body(...)):
 @router.get("/health/trend/{metric}")
 def health_metric_trend(metric: str, person_id: str = "", limit: int = Query(30, ge=1, le=500)):
     return health_trend(metric, person_id=person_id, limit=limit)
+
+@router.get("/agents")
+def agents_list():
+    return {"agents": agent_manifest()}
+
+
+@router.get("/workflows")
+def workflows_list():
+    return {"runs": WORKFLOWS.list_runs(), "definitions": sorted(WORKFLOWS.definitions)}
+
+
+@router.post("/audio/tts")
+def audio_tts(payload: dict = Body(...)):
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        raise HTTPException(400, "texto vacío")
+    if len(text) > 3000:
+        raise HTTPException(413, "texto demasiado largo")
+    if not AUDIO.tts_available:
+        raise HTTPException(503, "Piper no está configurado")
+    try:
+        wav = AUDIO.synthesize_wav(text)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    return Response(content=wav, media_type="audio/wav")
+
+
+@router.post("/audio/transcribe")
+async def audio_transcribe(audio: UploadFile = File(...)):
+    if not AUDIO.stt_available:
+        raise HTTPException(503, "whisper.cpp no está configurado")
+    raw = await audio.read()
+    if len(raw) > 25_000_000:
+        raise HTTPException(413, "audio demasiado grande")
+    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(raw)
+        path = tmp.name
+    try:
+        text = AUDIO.transcribe_wav(path)
+    finally:
+        Path(path).unlink(missing_ok=True)
+    BAYE.hear(text)
+    return {"text": text}

@@ -11,7 +11,7 @@ from a desktop companion into a real home robot without replacing its mind.
 ## What works now
 
 - FastAPI local core + HTML/CSS/JavaScript live console
-- animated BAY-E face: blink, gaze, listening, thinking, speaking and emotion
+- definitive minimal BAY-E face (`●────●`): procedural blink, gaze, listening, thinking, speaking-state micro-motion and emotion without a fake mouth
 - WebSocket live state/event stream
 - persistent SQLite chat, memories, tasks, settings, emotion history and world data
 - episodic/semantic/person/object/spatial/routine memory CRUD
@@ -189,4 +189,14 @@ node --check static/js/views.js
 uvicorn main:app --reload
 ```
 
-Current development line: **v1.1.0-dev**.
+Current stable software baseline: **v2.0.0**.
+
+### 2.0 definition of done
+
+BAY-E 2.0 is the stable software baseline for the companion core. “Stable” here
+means the local Core boots without robot hardware, chat/memory/tasks/world state
+remain persistent, optional AI/audio/vision providers degrade truthfully, the
+browser console exposes the operational subsystems, and physical commands remain
+behind deterministic safety + live hardware heartbeat. It does **not** claim the
+future tracked body, arms, docking or home SLAM are physically complete until
+those adapters and sensors report real telemetry.

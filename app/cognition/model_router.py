@@ -1,12 +1,13 @@
 """Local-first model router for BAY-E.
 
 Supported providers:
+- OpenAI Responses API (optional, via OPENAI_API_KEY)
 - llama.cpp OpenAI-compatible server (/v1/chat/completions)
 - Ollama (/api/chat)
-- deterministic fallback when neither local service is available
+- deterministic fallback
 
-No cloud key is required. Cloud adapters can be added later behind the same
-Provider contract.
+Secrets are read only from environment variables; API keys are never persisted
+to SQLite, logs, WebSocket state or the frontend.
 """
 from __future__ import annotations
 
@@ -35,15 +36,85 @@ class Provider(Protocol):
     def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply: ...
 
 
-def _post_json(url: str, payload: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
+def _post_json(url: str, payload: dict[str, Any], timeout: float = 12.0, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    hdr = {"Content-Type": "application/json"}
+    if headers:
+        hdr.update(headers)
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=hdr,
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+
+class OpenAIResponsesProvider:
+    name = "openai"
+
+    def __init__(self, config: dict | None = None) -> None:
+        config = config or {}
+        self.base = str(config.get("openai_url") or os.getenv("BAYE_OPENAI_URL", "https://api.openai.com/v1")).rstrip("/")
+        self.model = str(config.get("openai_model") or os.getenv("BAYE_OPENAI_MODEL", "gpt-6-luna"))
+        self.api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.store = str(config.get("openai_store") or os.getenv("BAYE_OPENAI_STORE", "false")).lower() in ("1","true","yes","on")
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.api_key)
+
+    @staticmethod
+    def _extract_text(data: dict[str, Any]) -> str:
+        direct = data.get("output_text")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        chunks: list[str] = []
+        for item in data.get("output") or []:
+            if not isinstance(item, dict) or item.get("type") != "message":
+                continue
+            for part in item.get("content") or []:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") in ("output_text", "text"):
+                    txt = part.get("text")
+                    if isinstance(txt, str):
+                        chunks.append(txt)
+        text = "\n".join(x.strip() for x in chunks if x and x.strip()).strip()
+        if not text:
+            raise ValueError("OpenAI response contained no output text")
+        return text
+
+    def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply:
+        if not self.enabled:
+            raise RuntimeError("OPENAI_API_KEY is not configured")
+        instructions = "\n\n".join(
+            m["content"] for m in messages if m.get("role") == "system" and m.get("content")
+        )
+        input_messages = [
+            {"role": m["role"], "content": m["content"]}
+            for m in messages
+            if m.get("role") in ("user", "assistant") and m.get("content")
+        ]
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "input": input_messages,
+            "store": self.store,
+        }
+        if instructions:
+            payload["instructions"] = instructions
+        data = _post_json(
+            f"{self.base}/responses",
+            payload,
+            timeout=30.0,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+        )
+        return ModelReply(
+            text=self._extract_text(data),
+            provider=self.name,
+            model=self.model,
+        )
 
 
 class LlamaCppProvider:
@@ -110,9 +181,19 @@ class ModelRouter:
 
     def configure(self, config: dict | None) -> None:
         config = dict(config or {})
-        order_value = str(config.get("provider_order") or os.getenv("BAYE_MODEL_ORDER", "llama.cpp,ollama"))
-        known = {"llama.cpp": LlamaCppProvider, "ollama": OllamaProvider}
-        self.providers = [known[n.strip()](config) for n in order_value.split(",") if n.strip() in known]
+        order_value = str(config.get("provider_order") or os.getenv("BAYE_MODEL_ORDER", "openai,llama.cpp,ollama"))
+        known = {"openai": OpenAIResponsesProvider, "llama.cpp": LlamaCppProvider, "ollama": OllamaProvider}
+        providers: list[Provider] = []
+        for raw in order_value.split(","):
+            name = raw.strip()
+            cls = known.get(name)
+            if not cls:
+                continue
+            provider = cls(config)
+            if name == "openai" and not getattr(provider, "enabled", False):
+                continue
+            providers.append(provider)
+        self.providers = providers
         self._fingerprint = json.dumps(config, sort_keys=True, ensure_ascii=False)
 
     def _refresh_config(self) -> None:
@@ -144,7 +225,7 @@ class ModelRouter:
                 self._failed_until.pop(provider.name, None)
                 GUARDIAN.report("model", "ok", f"{out.provider}:{out.model}")
                 return out
-            except (OSError, KeyError, ValueError, urllib.error.URLError, TimeoutError) as exc:
+            except (OSError, RuntimeError, KeyError, ValueError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
                 GUARDIAN.report("model", "degraded", f"{provider.name}: {exc!r}")
                 self._failed_until[provider.name] = time.time() + 30.0
                 continue

@@ -833,7 +833,8 @@ const Views = (() => {
   /* ═══════════════════════ AJUSTES ═══════════════════════ */
   const settings = {
     sections: [
-      { id: "identity", name: "Identidad", icon: "sparkle" }, { id: "audio", name: "Audio y voz", icon: "voice" },
+      { id: "identity", name: "Identidad", icon: "sparkle" }, { id: "ai", name: "Cerebro IA", icon: "brain" },
+      { id: "system", name: "Sistema", icon: "cpu" }, { id: "audio", name: "Audio y voz", icon: "voice" },
       { id: "vision", name: "Visión", icon: "eye" }, { id: "personality", name: "Personalidad", icon: "heart" },
       { id: "autonomy", name: "Autonomía", icon: "compass" }, { id: "security", name: "Seguridad", icon: "shield" },
       { id: "hardware", name: "Hardware / ROS 2", icon: "cpu" }, { id: "privacy", name: "Privacidad", icon: "key" },
@@ -848,12 +849,14 @@ const Views = (() => {
     refresh(s) { this.st = s.settings; if ($("#view-settings").classList.contains("is-active")) this.render(); },
     fields: {
       identity: [["name", "Nombre", "text"], ["species", "Especie", "text"], ["birthday", "Nacimiento", "text"], ["voice", "Voz", "select:cálida · suave,juguetona,serena,guardián,piloto"], ["language", "Idioma", "select:es,ca,en,fr"], ["personality", "Arquetipo", "select:baymax,walle,personalizado"]],
+      ai: [["provider_order", "Orden de proveedores", "text"], ["llama_url", "URL llama.cpp", "text"], ["llama_model", "Modelo llama.cpp", "text"], ["ollama_url", "URL Ollama", "text"], ["ollama_model", "Modelo Ollama", "text"]],
+      system: [["demo_mode", "Modo demo sintético", "bool"], ["allow_synthetic_events", "Permitir eventos sintéticos", "bool"]],
       audio: [["tts_enabled", "Voz activada", "bool"], ["wake_word", "Palabra de activación", "text"], ["volume", "Volumen (0-1)", "num"], ["rate", "Velocidad (0.5-2)", "num"]],
       vision: [["camera_enabled", "Cámara activada", "bool"], ["fps", "FPS", "num"], ["detect_people", "Detectar personas", "bool"], ["detect_animals", "Detectar animales", "bool"], ["save_captures", "Guardar capturas", "bool"]],
       personality: [["auto_emotions", "Emociones automáticas", "bool"], ["curiosity_level", "Curiosidad base", "num"], ["affection", "Cariño", "num"], ["humor", "Sentido del humor", "num"], ["handicap_speak", "Habla enternecedora", "bool"]],
       autonomy: [["enabled", "Autonomía general", "bool"], ["explore_when_bored", "Explorar si se aburre", "bool"], ["sleep_at_night", "Dormir de noche", "bool"], ["return_base_battery", "Umbral batería (%)", "num"]],
       security: [["max_speed", "Velocidad máxima (m/s)", "num"], ["stairs_allowed", "Permitir escaleras", "bool"], ["night_patrol", "Patrulla nocturna", "bool"], ["child_lock", "Bloqueo infantil", "bool"]],
-      hardware: [["ros2_bridge", "Puente ROS 2", "bool"], ["ros_domain_id", "ROS_DOMAIN_ID", "num"], ["model_paths.llm", "Ruta modelo LLM", "text"], ["model_paths.vision", "Ruta modelo visión", "text"], ["model_paths.tts", "Ruta modelo TTS", "text"], ["model_paths.stt", "Ruta modelo STT", "text"]],
+      hardware: [["ros2_bridge", "Puente ROS 2", "bool"], ["ros_domain_id", "ROS_DOMAIN_ID", "num"], ["base_pose.x", "Base X (m)", "num"], ["base_pose.y", "Base Y (m)", "num"], ["base_pose.yaw", "Base yaw (rad)", "num"], ["model_paths.llm", "Ruta modelo LLM", "text"], ["model_paths.vision", "Ruta modelo visión", "text"], ["model_paths.tts", "Ruta modelo TTS", "text"], ["model_paths.stt", "Ruta modelo STT", "text"]],
       privacy: [["private_mode", "Modo privado", "bool"], ["retention_days", "Retención (días)", "num"], ["restricted_zones", "Zonas restringidas (coma)", "list"], ["forbidden_objects", "Objetos prohibidos (coma)", "list"]],
     },
     render() {
@@ -873,8 +876,11 @@ const Views = (() => {
           if (el.type === "number") val = parseFloat(val) || 0;
           if (el.tagName === "SELECT" && /^\d/.test(val)) val = parseInt(val);
           const parts = el.dataset.k.split(".");
-          if (parts.length === 1) patch[parts[0]] = val;
-          else { (patch[parts[0]] ||= {})[parts[1]] = val; }
+          let cur = patch;
+          parts.forEach((part, i) => {
+            if (i === parts.length - 1) cur[part] = val;
+            else cur = (cur[part] ||= {});
+          });
         });
         await Net.api("PUT", `/api/settings/${this.cur}`, patch);
         toast("Configuración guardada ⚙️");

@@ -23,6 +23,7 @@ from typing import Callable, Optional
 from . import db
 from .config import APP_VERSION, DEFAULT_MODULES, DEFAULT_SETTINGS
 from app.autonomy.engine import AUTONOMY
+from app.autonomy.scheduler import SCHEDULER
 from app.cognition.conversation import respond as conversation_respond
 from app.adapters.robot import ROBOT
 from .events import BUS
@@ -529,6 +530,15 @@ class BayeBrain:
             g = s["goal_queue"].pop(0)
             s["current_task"] = g["label"]
             s["last_event"] = f"Demo: completado objetivo {g['label']}."
+
+        # tareas/rutinas vencidas: se anuncian, no se ejecutan a ciegas
+        due_tasks = SCHEDULER.tick(now)
+        if due_tasks:
+            task = due_tasks[0]
+            s["current_task"] = task["title"]
+            s["last_event"] = f"Tarea pendiente: {task['title']}."
+            s["next_decision"] = "Recordar la tarea y esperar confirmación o un skill autorizado."
+            e["attention"] = _clamp(e["attention"] + 0.15)
 
         # autonomía: propone intenciones; la ejecución física queda en adapters/ROS2
         proposed = AUTONOMY.propose(self.snapshot())

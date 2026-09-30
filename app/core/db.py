@@ -174,7 +174,10 @@ CREATE TABLE IF NOT EXISTS mobile_nodes (
     platform TEXT NOT NULL DEFAULT 'android',
     last_seen REAL NOT NULL,
     capabilities TEXT NOT NULL DEFAULT '{}',
-    telemetry TEXT NOT NULL DEFAULT '{}'
+    telemetry TEXT NOT NULL DEFAULT '{}',
+    token_hash TEXT NOT NULL DEFAULT '',
+    paired_at REAL NOT NULL DEFAULT 0,
+    revoked INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -202,6 +205,14 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         conn.execute("UPDATE messages SET updated_at=created_at WHERE updated_at=0")
     if "deleted" not in cols:
         conn.execute("ALTER TABLE messages ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+
+    mobile_cols = _column_names(conn, "mobile_nodes")
+    if "token_hash" not in mobile_cols:
+        conn.execute("ALTER TABLE mobile_nodes ADD COLUMN token_hash TEXT NOT NULL DEFAULT ''")
+    if "paired_at" not in mobile_cols:
+        conn.execute("ALTER TABLE mobile_nodes ADD COLUMN paired_at REAL NOT NULL DEFAULT 0")
+    if "revoked" not in mobile_cols:
+        conn.execute("ALTER TABLE mobile_nodes ADD COLUMN revoked INTEGER NOT NULL DEFAULT 0")
 
     now = time.time()
     conn.execute(
@@ -647,8 +658,19 @@ def delete_mind_rule(rule_id: str) -> bool:
 
 
 # ----------------------------------------------------------------- nodos móviles
+def _row_to_mobile_node(r: sqlite3.Row) -> dict:
+    d = dict(r)
+    d["capabilities"] = json.loads(d.get("capabilities") or "{}")
+    d["telemetry"] = json.loads(d.get("telemetry") or "{}")
+    d["paired"] = bool(d.get("token_hash")) and not bool(d.get("revoked"))
+    d["revoked"] = bool(d.get("revoked"))
+    d.pop("token_hash", None)
+    return d
+
+
 def upsert_mobile_node(node_id: str, *, name: str, platform: str = "android",
                        capabilities: Optional[dict] = None, telemetry: Optional[dict] = None) -> dict:
+    """Actualiza telemetría sin tocar credenciales de emparejamiento."""
     now = time.time()
     capabilities = capabilities or {}
     telemetry = telemetry or {}
@@ -663,10 +685,57 @@ def upsert_mobile_node(node_id: str, *, name: str, platform: str = "android",
         conn.commit()
         r = conn.execute("SELECT * FROM mobile_nodes WHERE id=?", (node_id,)).fetchone()
         conn.close()
-    d = dict(r)
-    d["capabilities"] = json.loads(d["capabilities"] or "{}")
-    d["telemetry"] = json.loads(d["telemetry"] or "{}")
-    return d
+    return _row_to_mobile_node(r)
+
+
+def pair_mobile_node(node_id: str, *, name: str, platform: str, token_hash: str) -> dict:
+    now = time.time()
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO mobile_nodes "
+            "(id,name,platform,last_seen,capabilities,telemetry,token_hash,paired_at,revoked) "
+            "VALUES (?,?,?,?, '{}', '{}', ?, ?, 0) "
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name,platform=excluded.platform,"
+            "last_seen=excluded.last_seen,token_hash=excluded.token_hash,paired_at=excluded.paired_at,revoked=0",
+            (node_id, name, platform, now, token_hash, now),
+        )
+        conn.commit()
+        r = conn.execute("SELECT * FROM mobile_nodes WHERE id=?", (node_id,)).fetchone()
+        conn.close()
+    return _row_to_mobile_node(r)
+
+
+def get_mobile_node(node_id: str) -> Optional[dict]:
+    with _LOCK:
+        conn = _conn()
+        r = conn.execute("SELECT * FROM mobile_nodes WHERE id=?", (node_id,)).fetchone()
+        conn.close()
+    return _row_to_mobile_node(r) if r else None
+
+
+def get_mobile_auth(node_id: str) -> Optional[dict]:
+    """Vista interna mínima; token_hash nunca se devuelve por endpoints públicos."""
+    with _LOCK:
+        conn = _conn()
+        r = conn.execute(
+            "SELECT id,token_hash,paired_at,revoked FROM mobile_nodes WHERE id=?",
+            (node_id,),
+        ).fetchone()
+        conn.close()
+    return dict(r) if r else None
+
+
+def revoke_mobile_node(node_id: str) -> bool:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute(
+            "UPDATE mobile_nodes SET revoked=1,token_hash='' WHERE id=?",
+            (node_id,),
+        ).rowcount
+        conn.commit()
+        conn.close()
+    return n > 0
 
 
 def list_mobile_nodes() -> list[dict]:
@@ -674,13 +743,7 @@ def list_mobile_nodes() -> list[dict]:
         conn = _conn()
         rows = conn.execute("SELECT * FROM mobile_nodes ORDER BY last_seen DESC").fetchall()
         conn.close()
-    out = []
-    for r in rows:
-        d = dict(r)
-        d["capabilities"] = json.loads(d["capabilities"] or "{}")
-        d["telemetry"] = json.loads(d["telemetry"] or "{}")
-        out.append(d)
-    return out
+    return [_row_to_mobile_node(r) for r in rows]
 
 
 # ----------------------------------------------------------------- tareas

@@ -19,4 +19,5 @@ def _open() -> None:
 
 if __name__ == "__main__":
     threading.Thread(target=_open, daemon=True).start()
-    uvicorn.run("main:app", host="127.0.0.1", port=int(os.getenv("BAYE_PORT", "8300")), reload=False)
+    host = os.getenv("BAYE_HOST", "127.0.0.1")
+    uvicorn.run("main:app", host=host, port=int(os.getenv("BAYE_PORT", "8300")), reload=False)

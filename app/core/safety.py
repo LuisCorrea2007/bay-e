@@ -11,6 +11,13 @@ from typing import Any
 
 
 MOTION_COMMANDS = {"up", "down", "left", "right", "forward", "backward", "stop"}
+def _number(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 HAZARDOUS_LABELS = {
     "knife", "cuchillo", "blade", "navaja", "scissors", "tijeras",
     "medicine", "medicina", "medicamento", "pill", "pastilla",
@@ -54,10 +61,10 @@ class SafetyGovernor:
         # Proximity constraints are conservative because an arm can injure even
         # when the target object itself is harmless.
         pet_distance = context.get("pet_distance_m")
-        if pet_distance is not None and float(pet_distance) < 1.0:
+        if pet_distance is not None and _number(pet_distance, 99.0) < 1.0:
             return SafetyDecision(False, "Brazo bloqueado: hay una mascota demasiado cerca.", "pet_proximity", base)
         person_distance = context.get("person_distance_m")
-        if person_distance is not None and float(person_distance) < 0.55:
+        if person_distance is not None and _number(person_distance, 99.0) < 0.55:
             return SafetyDecision(False, "Brazo bloqueado: hay una persona demasiado cerca.", "person_proximity", base)
 
         target_kind = str(context.get("target_kind", "")).strip().lower()
@@ -105,13 +112,13 @@ class SafetyGovernor:
         if state.get("private_mode") and not state.get("sensors", {}).get("camera"):
             return SafetyDecision(False, "Movimiento bloqueado: percepción visual desactivada.", "blind_motion", {"dir": "stop", "speed": 0.0})
 
-        max_speed = max(0.05, min(1.0, float(settings.get("security", {}).get("max_speed", 0.6))))
-        requested = max(0.0, min(max_speed, float(context.get("speed", max_speed))))
+        max_speed = max(0.05, min(1.0, _number(settings.get("security", {}).get("max_speed", 0.6), 0.6)))
+        requested = max(0.0, min(max_speed, _number(context.get("speed", max_speed), max_speed)))
         pet_distance = context.get("pet_distance_m")
         person_distance = context.get("person_distance_m")
-        if pet_distance is not None and float(pet_distance) < 1.5:
+        if pet_distance is not None and _number(pet_distance, 99.0) < 1.5:
             requested = min(requested, 0.18)
-        if person_distance is not None and float(person_distance) < 1.0:
+        if person_distance is not None and _number(person_distance, 99.0) < 1.0:
             requested = min(requested, 0.22)
 
         return SafetyDecision(True, "Movimiento autorizado por la capa determinista.", "allowed", {"dir": direction, "speed": round(requested, 3)})

@@ -3,7 +3,7 @@ BAY-E · Gestión de conexiones WebSocket y bucle vital en segundo plano.
 
 Cada cliente conectado recibe su propia cola de eventos. El bucle `life_loop`:
   * ejecuta el heartbeat del cerebro (emociones, batería, autonomía),
-  * simula detecciones de visión cuando el módulo está activo,
+  * emite detecciones sintéticas únicamente cuando demo_mode está activo,
   * emite snapshots a todas las colas.
 
 Cuando exista hardware real, basta con reemplazar `life_loop` por listeners
@@ -95,7 +95,7 @@ def handle_client_msg(msg: dict, emit) -> None:
         emit({"type": "pong", "ts": time.time()})
 
 
-# ----------------------------------------------------------------- visión simulada
+# ----------------------------------------------------------------- visión demo opcional
 DETECTIONS = [
     {"label": "persona", "kind": "person", "confidence": 0.82},
     {"label": "gato", "kind": "animal", "confidence": 0.78},
@@ -107,7 +107,7 @@ DETECTIONS = [
 
 
 def vision_tick() -> None:
-    """Simula una detección visual (se sustituye por el módulo real de visión)."""
+    """Genera una detección sintética únicamente en demo_mode."""
     if not BAYE.s.get("demo_mode", False):
         return
     cam_on = BAYE.s["sensors"]["camera"] and any(m["id"] == "vision" and m["enabled"] for m in BAYE.s["modules"])
@@ -116,7 +116,7 @@ def vision_tick() -> None:
     det = dict(random.choice(DETECTIONS))
     det["confidence"] = round(min(0.99, max(0.2, det["confidence"] + random.uniform(-0.15, 0.1))), 2)
     det.update({"id": f"d_{int(time.time()*1000)%100000}", "ts": time.time(),
-                # caja normalizada simulada sobre el fotograma
+                # caja normalizada sintética para el modo demo
                 "box": {"x": round(random.uniform(0.05, 0.6), 3), "y": round(random.uniform(0.1, 0.6), 3),
                         "w": round(random.uniform(0.15, 0.35), 3), "h": round(random.uniform(0.2, 0.4), 3)}})
     BAYE.perceive_vision(det)

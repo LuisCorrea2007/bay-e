@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from app.autonomy.skills import SKILLS
+from app.core import db
 from app.cognition.agents import operational_context
 from app.cognition.intents import handle as handle_intent
 from app.cognition.model_router import MODELS, ModelReply
@@ -61,8 +62,17 @@ async def respond(user_text: str, *, state: dict[str, Any], history: list[dict[s
         f"private_mode={state.get('private_mode', False)}. "
         + operational_context(state)
     )
+    rules = db.list_mind_rules(enabled_only=True)
+    rules_text = "\n".join(
+        f"- [{r['kind']} p={r['priority']}] {r['content']}" for r in rules[:40]
+    ) or "(sin reglas personales adicionales)"
+
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.append({"role": "system", "content": f"ESTADO OPERATIVO:\n{operational}\n\nMEMORIAS RELEVANTES:\n{memories}\n\nMUNDO CONOCIDO:\n{world_summary}"})
+    messages.append({"role": "system", "content": (
+        f"ESTADO OPERATIVO:\n{operational}\n\n"
+        f"REGLAS, PRINCIPIOS Y OBJETIVOS EDITABLES:\n{rules_text}\n\n"
+        f"MEMORIAS RELEVANTES:\n{memories}\n\nMUNDO CONOCIDO:\n{world_summary}"
+    )})
     for msg in history[-12:]:
         role = "assistant" if msg.get("role") == "baye" else "user"
         messages.append({"role": role, "content": str(msg.get("content", ""))[:1800]})

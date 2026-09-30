@@ -36,6 +36,41 @@ jobs:
           done
           cat /tmp/baye.log
           exit 1
+      - name: Test API, WebSocket and audio contracts
+        run: |
+          python - <<'PY'
+          import asyncio
+          import json
+          import urllib.request
+          import websockets
+
+          def get_json(path):
+              with urllib.request.urlopen("http://127.0.0.1:8300" + path, timeout=5) as response:
+                  assert response.status == 200
+                  return json.load(response)
+
+          state = get_json("/api/v1/state")
+          legacy = get_json("/api/state")
+          audio = get_json("/api/v1/audio/status")
+          diagnostics = get_json("/api/v1/diagnostics")
+          assert isinstance(state, dict) and "alive" in state
+          assert isinstance(legacy, dict) and legacy.get("alive") == state.get("alive")
+          assert isinstance(audio, dict)
+          assert isinstance(diagnostics, dict)
+
+          async def ws_check():
+              async with websockets.connect("ws://127.0.0.1:8300/ws", open_timeout=5) as ws:
+                  first = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                  assert isinstance(first, dict) and "alive" in first
+                  await ws.send(json.dumps({"type": "ping"}))
+                  for _ in range(6):
+                      message = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+                      if message.get("type") == "pong":
+                          return
+                  raise AssertionError("WebSocket ping did not produce pong")
+
+          asyncio.run(ws_check())
+          PY
       - name: Test chat and mind UI
         run: |
           cat >/tmp/test_ui.py <<'PY'
@@ -88,6 +123,17 @@ jobs:
               assert page.locator(".learning-card").count() == 0
               page.screenshot(path=str(out/"baye-learning.png"), full_page=True)
               page.click("#drawer-close")
+              page.click("[data-panel=memory]")
+              page.wait_for_timeout(350)
+              assert page.locator("#memory-list .info-card").count() >= 1
+              assert "turquesa" in page.locator("#memory-list").inner_text().lower()
+              page.screenshot(path=str(out/"baye-memory.png"), full_page=True)
+              page.click("#drawer-close")
+              page.click("[data-panel=system]")
+              page.wait_for_timeout(400)
+              assert page.locator("#diagnostics .info-card").count() >= 1
+              page.screenshot(path=str(out/"baye-diagnostics.png"), full_page=True)
+              page.click("#drawer-close")
               page.fill("#chat-search","turquesa")
               page.wait_for_timeout(500)
               assert page.locator(".search-hit").count() >= 1
@@ -113,7 +159,13 @@ jobs:
       - name: Print BAY-E server log on failure
         if: failure()
         run: cat /tmp/baye.log || true
+      - name: Collect BAY-E server log
+        if: always()
+        run: |
+          mkdir -p runtime
+          cp /tmp/baye.log runtime/baye-server.log || true
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: BAY-E-web-runtime
           path: runtime/

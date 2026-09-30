@@ -148,6 +148,10 @@ This HTTP LAN mode is for a trusted local network only. Do not expose the raw
 FastAPI port directly to the public Internet; remote access should use TLS plus
 a private tunnel/VPN or a dedicated authenticated relay.
 
+BAY-E Mobile enforces this boundary in the client: plain `http://` Core URLs
+are accepted only for loopback/private-LAN/link-local/`.local` hosts. Public
+or remote hosts must use `https://`. Android WebView mixed content is disabled.
+
 Build the mobile app:
 
 ```bash

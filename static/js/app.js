@@ -1,5 +1,5 @@
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const App={thread:"default",threads:[],state:null,faces:{},editing:null,panel:"mind",busy:false,ws:null,retry:0,audio:null,voice:{recognition:null,wake:false,manual:false,active:false,suspended:false,restart:null,armedUntil:0,local:false,blocked:false}};
+const App={thread:"default",threads:[],state:null,faces:{},editing:null,panel:"mind",busy:false,ws:null,retry:0,audio:null,voice:{recognition:null,wake:false,manual:false,active:false,suspended:false,restart:null,armedUntil:0,local:false,localChecked:false,blocked:false}};
 
 function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function api(method,path,body){const o={method,headers:{}};if(body!==undefined){o.headers["Content-Type"]="application/json";o.body=JSON.stringify(body)}const r=await fetch(path,o);if(!r.ok)throw new Error(await r.text());return r.status===204?{}:r.json()}
@@ -211,15 +211,13 @@ function setupSpeech(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition,b=$("#wake-btn"),mic=$("#voice-btn");
   if(!SR){mic.onclick=()=>toast("Dictado no disponible en este navegador");b.disabled=true;b.title="Reconocimiento de voz no disponible";updateVoiceUi();return}
   const r=new SR();App.voice.recognition=r;r.lang="es-ES";r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
-  if(typeof SR.available==="function"&&"processLocally" in r){
-    SR.available({langs:["es-ES"],processLocally:true,quality:"command"}).then(status=>{if(status==="available"){r.processLocally=true;App.voice.local=true;updateVoiceUi()}}).catch(()=>{});
-  }
+  const preferLocal=async()=>{if(App.voice.localChecked)return;App.voice.localChecked=true;if(typeof SR.available!=="function"||!("processLocally" in r))return;try{const status=await SR.available({langs:["es-ES"],processLocally:true,quality:"command"});if(status==="available"){r.processLocally=true;App.voice.local=true;updateVoiceUi()}}catch{}};
   r.onstart=()=>{App.voice.active=true;mic.classList.toggle("listening",App.voice.manual);b.classList.toggle("listening",App.voice.wake);$("#activity").textContent=App.voice.manual?"Escuchando…":`Esperando "${voiceWord()}"…`;for(const f of Object.values(App.faces))Face.update(f,{listening:true,emotion:"attentive"})};
   r.onend=()=>{const wasManual=App.voice.manual;App.voice.active=false;App.voice.manual=false;mic.classList.remove("listening");b.classList.remove("listening");$("#activity").textContent="Listo";if(!App.voice.suspended)for(const f of Object.values(App.faces))Face.update(f,App.state?.expression||{});if(App.voice.wake)scheduleVoiceRestart(wasManual?450:300)};
   r.onresult=e=>{const transcript=e.results?.[0]?.[0]?.transcript||"";if(App.voice.manual)send(transcript);else if(App.voice.wake)handleWakeTranscript(transcript)};
   r.onerror=e=>{App.voice.active=false;const fatal=["not-allowed","service-not-allowed","audio-capture"].includes(e.error);if(fatal){App.voice.blocked=true;setWakeEnabled(false);toast("No pude mantener el micrófono activo: revisa permisos")}else if(App.voice.manual&&e.error!=="no-speech")toast("No pude escuchar el micrófono")};
   mic.onclick=()=>{if(App.voice.active&&App.voice.manual){try{r.stop()}catch{};return}startVoiceRecognition(true)};
-  b.onclick=()=>{if(App.state?.private_mode)return toast("Desactiva modo privado para usar manos libres");setWakeEnabled(!App.voice.wake)};
+  b.onclick=async()=>{if(App.state?.private_mode)return toast("Desactiva modo privado para usar manos libres");if(!App.voice.wake)await preferLocal();setWakeEnabled(!App.voice.wake)};
   updateVoiceUi();
 }
 

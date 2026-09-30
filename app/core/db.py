@@ -788,7 +788,8 @@ def resolve_learning_candidate(candidate_id: str, action: str) -> Optional[dict]
              float(item["confidence"]), json.dumps(["learned","user-approved"]), "[]", now),
         )
         conn.execute(
-            "UPDATE learning_candidates SET status='approved',memory_id=?,updated_at=? WHERE id=?",
+            "UPDATE learning_candidates SET status='approved',memory_id=?,content='',reason='',"
+            "source_message_id='',updated_at=? WHERE id=?",
             (mid, now, candidate_id),
         )
         conn.commit()

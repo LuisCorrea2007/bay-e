@@ -25,6 +25,7 @@ from ..core.guardian import GUARDIAN
 from ..adapters.audio import AUDIO
 from ..adapters.vision import VISION
 from ..autonomy.skills import SKILLS
+from ..autonomy.scheduler import next_occurrence
 from ..cognition.agents import manifest as agent_manifest
 from ..cognition.model_router import MODELS
 from ..core.workflows import WORKFLOWS
@@ -230,7 +231,11 @@ def tasks_update(tid: str, payload: dict = Body(...)):
         raise HTTPException(404, "tarea no encontrada")
     if payload.get("status") == "done":
         t["done_log"].append(time.strftime("%Y-%m-%d %H:%M"))
-        db.update_task(tid, done_log=t["done_log"])
+        if t.get("repeat"):
+            nxt = next_occurrence(float(t.get("scheduled_at") or time.time()), t["repeat"])
+            t = db.update_task(tid, done_log=t["done_log"], scheduled_at=nxt, status="pending")
+        else:
+            t = db.update_task(tid, done_log=t["done_log"]) or t
     return {"ok": True, "task": t}
 
 

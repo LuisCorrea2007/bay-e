@@ -55,7 +55,7 @@ const Views = (() => {
       $("#d-activity").textContent = s.activity;
       $("#d-mode").textContent = s.mode_label;
       $("#d-emotion").textContent = s.expression.emotion.replace("_", " ");
-      const room = (s.rooms.find((r) => r.id === s.position.room) || {}).name || "—";
+      const room = (s.rooms.find((r) => r.id === s.position.room) || {}).name || s.position.room || "—";
       $("#d-room").textContent = room;
       $("#d-thought").textContent = s.last_thought;
       $("#d-decision").textContent = s.next_decision;
@@ -79,6 +79,9 @@ const Views = (() => {
   /* ═══════════════════════ CHAT ═══════════════════════ */
   const chat = {
     pending: {}, // id -> nodo parcial
+    wakeRec: null,
+    wakeOn: false,
+    wakeArmedUntil: 0,
     mounted: false,
     mount() {
       if (this.mounted) return; this.mounted = true;
@@ -87,7 +90,11 @@ const Views = (() => {
       $("#qc-send").addEventListener("click", () => this.quick());
       $("#qc-text").addEventListener("keydown", (e) => { if (e.key === "Enter") this.quick(); });
       $("#chat-mic").addEventListener("click", () => this.mic());
-      Net.on("chat", (m) => this.renderMsg(m.message, m.final));
+      $("#chat-wake").addEventListener("click", () => this.toggleWake());
+      Net.on("chat", (m) => {
+        this.renderMsg(m.message, m.final);
+        if (m.final && m.message?.role === "baye") this.speakOut(m.message.content);
+      });
       Net.on("chat_partial", (m) => this.partial(m));
       Net.on("indicator", (m) => this.indicator(m.value));
     },
@@ -114,7 +121,7 @@ const Views = (() => {
     async restFallback(text) {
       try {
         const r = await Net.api("POST", "/api/chat/send", { text });
-        this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.scroll();
+        this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.speakOut(r.baye.content); this.scroll();
       } catch (e) { toast("sin conexión con BAY-E", true); }
     },
     partial(m) {
@@ -166,10 +173,28 @@ const Views = (() => {
         if (a === "task") { toast("Convertido en tarea ✅"); tasks.load(); }
       } catch (e) { toast("no se pudo aplicar", true); }
     },
-    speakOut(text) {
+    async speakOut(text) {
+      try {
+        if (this._audioStatus === undefined) this._audioStatus = await Net.api("GET", "/api/audio/status");
+        if (this._audioStatus?.tts_available) {
+          const r = await fetch("/api/audio/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+          if (r.ok) {
+            const url = URL.createObjectURL(await r.blob());
+            const audio = new Audio(url);
+            audio.onplay = () => { this.indicator("speaking"); Net.command("sensor", { sensor: "tts", on: true }); };
+            audio.onended = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); URL.revokeObjectURL(url); };
+            audio.onerror = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); URL.revokeObjectURL(url); };
+            await audio.play();
+            return;
+          }
+        }
+      } catch (e) { console.warn("Piper TTS", e); }
       if (!("speechSynthesis" in window)) return;
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = "es-ES"; u.rate = .98; u.pitch = 1.15;
+      u.lang = "es-ES"; u.rate = .96; u.pitch = 1.08;
+      u.onstart = () => { this.indicator("speaking"); Net.command("sensor", { sensor: "tts", on: true }); };
+      u.onend = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); };
+      u.onerror = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); };
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     },
     indicator(v) {
@@ -179,14 +204,81 @@ const Views = (() => {
       if (v && map[v]) { $("#act-banner-txt").textContent = map[v]; banner.classList.add("show"); }
       else banner.classList.remove("show");
     },
+    toggleWake() {
+      if (this.wakeOn) this.stopWake();
+      else this.startWake();
+    },
+    startWake() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) return toast("Tu navegador no soporta escucha continua", true);
+      if (STATE?.private_mode) return toast("Desactiva el modo privado para usar escucha por nombre", true);
+      this.wakeOn = true;
+      $("#chat-wake").classList.add("on");
+      const rec = new SR();
+      this.wakeRec = rec;
+      rec.lang = "es-ES";
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.onstart = () => Net.command("sensor", { sensor: "mic", on: true });
+      rec.onresult = (e) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (!e.results[i].isFinal) continue;
+          const heard = e.results[i][0].transcript.trim();
+          const lower = heard.toLowerCase();
+          const wake = String(STATE?.settings?.audio?.wake_word || "bay-e").toLowerCase();
+          const alternatives = [wake, wake.replace("-", " "), "baye", "bay e"];
+          const hit = alternatives.find((w) => w && lower.includes(w));
+          if (hit) {
+            const idx = lower.indexOf(hit);
+            const after = heard.slice(idx + hit.length).replace(/^[,.:;!¿?\s-]+/, "").trim();
+            this.wakeArmedUntil = Date.now() + 9000;
+            this.indicator("listening");
+            if (after) {
+              $("#chat-input").value = after;
+              this.submit();
+              this.wakeArmedUntil = 0;
+            }
+          } else if (Date.now() < this.wakeArmedUntil && heard) {
+            $("#chat-input").value = heard;
+            this.submit();
+            this.wakeArmedUntil = 0;
+          }
+        }
+      };
+      rec.onerror = (e) => {
+        if (!["no-speech", "aborted"].includes(e.error)) console.warn("wake word", e.error);
+      };
+      rec.onend = () => {
+        if (!this.wakeOn) {
+          Net.command("sensor", { sensor: "mic", on: false });
+          return;
+        }
+        setTimeout(() => { try { rec.start(); } catch {} }, 400);
+      };
+      try { rec.start(); toast("Escucha por «" + (STATE?.settings?.audio?.wake_word || "bay-e") + "» activada"); }
+      catch { this.stopWake(); }
+    },
+    stopWake() {
+      this.wakeOn = false;
+      this.wakeArmedUntil = 0;
+      $("#chat-wake")?.classList.remove("on");
+      try { this.wakeRec?.stop(); } catch {}
+      this.wakeRec = null;
+      Net.command("sensor", { sensor: "mic", on: false });
+      this.indicator(null);
+    },
+    syncState(s) {
+      if (s?.private_mode && this.wakeOn) this.stopWake();
+    },
     mic() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { toast("Tu navegador no soporta dictado por voz", true); return; }
       const rec = new SR(); rec.lang = "es-ES"; rec.interimResults = false;
+      Net.command("sensor", { sensor: "mic", on: true });
       $("#chat-mic").classList.add("rec"); $("#hearing").hidden = false;
       rec.onresult = (e) => { $("#chat-input").value = e.results[0][0].transcript; this.submit(); };
       rec.onerror = () => { toast("no te escuché bien, intenta otra vez", true); };
-      rec.onend = () => { $("#chat-mic").classList.remove("rec"); $("#hearing").hidden = true; };
+      rec.onend = () => { $("#chat-mic").classList.remove("rec"); $("#hearing").hidden = true; Net.command("sensor", { sensor: "mic", on: false }); };
       rec.start();
     },
     scroll() { const sc = $("#chat-scroll"); sc.scrollTop = sc.scrollHeight; },
@@ -413,16 +505,70 @@ const Views = (() => {
     },
   };
 
+  /* ═══════════════════════ SALUD / BIENESTAR ═══════════════════════ */
+  const health = {
+    mounted: false,
+    units: { heart_rate: "bpm", spo2: "%", temperature: "°C", respiratory_rate: "rpm", weight: "kg", custom: "" },
+    mount() {
+      if (this.mounted) return; this.mounted = true;
+      $("#health-metric").addEventListener("change", () => {
+        const m = $("#health-metric").value;
+        if (m !== "custom") $("#health-unit").value = this.units[m] || "";
+        this.load();
+      });
+      $("#health-save").addEventListener("click", () => this.save());
+      $("#health-person").addEventListener("change", () => this.load());
+    },
+    async save() {
+      const metric = $("#health-metric").value;
+      const value = Number($("#health-value").value);
+      const unit = $("#health-unit").value.trim();
+      if (!Number.isFinite(value) || !unit) return toast("Completa valor y unidad", true);
+      try {
+        await Net.api("POST", "/api/health/measurements", { metric, value, unit, person_id: $("#health-person").value.trim(), source: "user", quality: 1 });
+        $("#health-value").value = "";
+        toast("Medición guardada");
+        this.load();
+      } catch (e) { toast("No pude guardar la medición", true); }
+    },
+    async load() {
+      if (!$("#view-health").classList.contains("is-active")) return;
+      const metric = $("#health-metric").value;
+      const person = $("#health-person").value.trim();
+      try {
+        const q = "?person_id=" + encodeURIComponent(person) + "&limit=30";
+        const t = await Net.api("GET", "/api/health/trend/" + encodeURIComponent(metric) + q);
+        const r = await Net.api("GET", "/api/health/measurements?metric=" + encodeURIComponent(metric) + "&person_id=" + encodeURIComponent(person) + "&limit=20");
+        const unit = r.measurements[0]?.unit || $("#health-unit").value || "";
+        $("#health-latest").textContent = t.latest == null ? "—" : Number(t.latest).toFixed(2) + " " + unit;
+        $("#health-mean").textContent = t.mean == null ? "—" : Number(t.mean).toFixed(2) + " " + unit;
+        $("#health-delta").textContent = t.delta == null ? "—" : Number(t.delta).toFixed(2) + " " + unit;
+        $("#health-count").textContent = t.count || 0;
+        $("#health-notice").textContent = t.notice || "Sin suficientes muestras.";
+        if (!r.measurements.length) $("#health-recent").innerHTML = '<p class="empty">sin mediciones registradas</p>';
+        else {
+          $("#health-recent").innerHTML = r.measurements.map((m) => '<div class="recent-row">' + Icons.svg("pulse") + '<div><label>' + esc(m.metric) + '</label><span>' + Number(m.value).toFixed(2) + " " + esc(m.unit) + " · " + fmtDT(m.ts) + " · fuente " + esc(m.source) + '</span></div></div>').join("");
+          Icons.hydrate($("#health-recent"));
+        }
+      } catch (e) { console.warn("health", e); }
+    },
+  };
   /* ═══════════════════════ VISIÓN ═══════════════════════ */
   const vision = {
     dets: [],
     current: null,
+    stream: null,
+    timer: null,
+    video: null,
+    canvas: null,
+    uploadBusy: false,
     mounted: false,
     mount() {
       if (this.mounted) return; this.mounted = true;
       Net.on("detection", (m) => this.onDet(m.detection));
-      $("#cam-toggle").addEventListener("click", () => {
-        const on = !(STATE?.sensors?.camera); Net.command("sensor", { sensor: "camera", on });
+      $("#cam-toggle").addEventListener("click", async () => {
+        if (this.stream) await this.stopCamera();
+        else await this.startCamera();
       });
       $("#det-save").addEventListener("click", () => {
         if (!this.current) return toast("no hay detección activa", true);
@@ -436,6 +582,109 @@ const Views = (() => {
       $("#det-ignore").addEventListener("click", () => {
         this.dets = this.dets.filter((d) => d.id !== this.current?.id); this.current = null; this.render(); toast("Detección ignorada");
       });
+      $("#face-enroll").addEventListener("click", () => this.enrollPerson());
+      this.loadPeople();
+    },
+    async enrollPerson() {
+      if (!this.stream || !this.video || !this.canvas) return toast("Activa primero la cámara", true);
+      const name = prompt("Nombre de la persona que BAY-E debe reconocer:");
+      if (!name?.trim()) return;
+      const consent = confirm("¿Esta persona dio permiso explícito para que BAY-E guarde un vector facial local para reconocerla? No se guardará esta foto.");
+      if (!consent) return toast("Enrolamiento cancelado: falta consentimiento", true);
+      const maxW = 720;
+      const scale = Math.min(1, maxW / this.video.videoWidth);
+      this.canvas.width = Math.max(1, Math.round(this.video.videoWidth * scale));
+      this.canvas.height = Math.max(1, Math.round(this.video.videoHeight * scale));
+      this.canvas.getContext("2d").drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+      this.canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const fd = new FormData();
+        fd.append("frame", blob, "enroll.jpg");
+        fd.append("name", name.trim());
+        fd.append("consent", "true");
+        try {
+          const r = await fetch("/api/vision/people/enroll", { method: "POST", body: fd });
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) return toast(body.detail || "No pude aprender ese rostro", true);
+          toast("Perfil local creado con consentimiento: " + body.profile.name);
+          this.loadPeople();
+        } catch (e) { toast("Error al enrolar la persona", true); }
+      }, "image/jpeg", .86);
+    },
+    async loadPeople() {
+      try {
+        const data = await Net.api("GET", "/api/vision/people");
+        const box = $("#face-profiles");
+        if (!data.profiles.length) {
+          box.innerHTML = '<p class="empty">sin perfiles locales</p>';
+          return;
+        }
+        box.innerHTML = data.profiles.map((p) =>
+          '<div class="recent-row"><i data-icon="users"></i><div><label>' + esc(p.name) +
+          '</label><span>consentimiento registrado · ' + fmtDT(p.consent_ts) +
+          '</span></div><button class="btn sm danger" data-face-del="' + esc(p.id) + '">borrar</button></div>'
+        ).join("");
+        Icons.hydrate(box);
+        $("[data-face-del]", box).forEach((b) => b.addEventListener("click", async () => {
+          if (!confirm("¿Eliminar este perfil facial local?")) return;
+          await Net.api("DELETE", "/api/vision/people/" + encodeURIComponent(b.dataset.faceDel));
+          toast("Perfil facial eliminado");
+          this.loadPeople();
+        }));
+      } catch (e) { console.warn("face profiles", e); }
+    },
+    async startCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        toast("Este navegador no permite acceso a cámara", true); return;
+      }
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "environment" },
+          audio: false,
+        });
+        this.video = document.createElement("video");
+        this.video.srcObject = this.stream;
+        this.video.muted = true;
+        this.video.playsInline = true;
+        await this.video.play();
+        this.canvas = document.createElement("canvas");
+        Net.command("sensor", { sensor: "camera", on: true });
+        $("#feed-off").hidden = true;
+        this.timer = setInterval(() => this.captureAndObserve(), 900);
+        await this.captureAndObserve();
+        toast("Cámara real conectada 👁️");
+      } catch (e) {
+        this.stream = null;
+        toast("No pude abrir la cámara: " + (e?.message || e), true);
+      }
+    },
+    async stopCamera() {
+      clearInterval(this.timer); this.timer = null;
+      if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null; this.video = null; this.canvas = null;
+      Net.command("sensor", { sensor: "camera", on: false });
+      $("#feed-img").src = "/static/camera_sim.svg";
+      toast("Cámara desconectada");
+    },
+    async captureAndObserve() {
+      if (!this.stream || !this.video || this.video.readyState < 2 || !this.canvas) return;
+      const maxW = 720;
+      const scale = Math.min(1, maxW / this.video.videoWidth);
+      this.canvas.width = Math.max(1, Math.round(this.video.videoWidth * scale));
+      this.canvas.height = Math.max(1, Math.round(this.video.videoHeight * scale));
+      const ctx = this.canvas.getContext("2d");
+      ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+      $("#feed-img").src = this.canvas.toDataURL("image/jpeg", .72);
+      this.canvas.toBlob(async (blob) => {
+        if (!blob || this.uploadBusy) return;
+        this.uploadBusy = true;
+        const fd = new FormData(); fd.append("frame", blob, "frame.jpg");
+        try {
+          const r = await fetch("/api/vision/observe", { method: "POST", body: fd });
+          if (!r.ok && r.status !== 409) console.warn("vision", await r.text());
+        } catch (e) { console.warn("vision observe", e); }
+        finally { this.uploadBusy = false; }
+      }, "image/jpeg", .72);
     },
     onDet(d) {
       this.dets.unshift(d); if (this.dets.length > 30) this.dets.pop();
@@ -444,6 +693,7 @@ const Views = (() => {
     refresh(s) {
       STATE = s;
       const off = !s.sensors.camera || s.private_mode;
+      if (s.private_mode && this.stream) this.stopCamera();
       $("#feed-off").hidden = !off;
       $("#feed-img").style.opacity = off ? ".15" : "1";
     },
@@ -498,6 +748,23 @@ const Views = (() => {
         $("#pitch").value = ((e.clientY - r.top) / r.height * 2 - 1) * 100;
         sendLook();
       });
+      const sendArm = (side) => Net.command("arm", {
+        side,
+        shoulder: +$("#arm-" + (side === "left" ? "l" : "r") + "-shoulder").value / 100,
+        elbow: +$("#arm-" + (side === "left" ? "l" : "r") + "-elbow").value / 100,
+        gripper: +$("#arm-" + (side === "left" ? "l" : "r") + "-gripper").value / 100,
+      });
+      ["l", "r"].forEach((short) => {
+        const side = short === "l" ? "left" : "right";
+        ["shoulder", "elbow", "gripper"].forEach((joint) => {
+          $("#arm-" + short + "-" + joint).addEventListener("change", () => sendArm(side));
+        });
+      });
+      $("#robot-estop").addEventListener("click", () => Net.command("emergency_stop", {}));
+      $("#robot-estop-clear").addEventListener("click", () => Net.command("clear_estop", {}));
+      Net.on("command_ack", (ack) => {
+        if (ack.blocked) toast("Orden bloqueada por seguridad: " + (ack.reason || "sin detalle"), true);
+      });
       $("#sw-autonomy").addEventListener("change", (e) => Net.command("toggle_autonomy", { on: e.target.checked }));
       $("#btn-base").addEventListener("click", () => Net.command("return_base"));
       $("#goal-add").addEventListener("click", () => this.addGoal());
@@ -511,6 +778,16 @@ const Views = (() => {
     refresh(s) {
       $$(".mode-btn").forEach((b) => b.classList.toggle("on", b.dataset.m === s.mode));
       $("#sw-autonomy").checked = s.autonomy;
+      const arms = s.arms || {};
+      for (const [side, short] of [["left","l"],["right","r"]]) {
+        const a = arms[side] || {};
+        const ids = [["shoulder",-1,1],["elbow",-1,1],["gripper",0,1]];
+        ids.forEach(([joint]) => {
+          const el = $("#arm-" + short + "-" + joint);
+          if (el && document.activeElement !== el) el.value = Math.round((a[joint] || 0) * 100);
+        });
+      }
+      $("#robot-estop").classList.toggle("on", !!s.software_estop);
       $("#c-task").textContent = s.current_task || "ninguna";
       $("#c-next").textContent = s.next_decision;
       $("#c-reason").textContent = s.reason;
@@ -619,7 +896,7 @@ const Views = (() => {
 
   /* ═══════════════════════ MAPA ═══════════════════════ */
   const homeMap = {
-    mounted: false, explored: new Set(["living", "hall"]),
+    mounted: false, explored: new Set(),
     mount() { this.mounted = true; },
     refresh(s) {
       const svg = $("#map-svg");
@@ -638,7 +915,7 @@ const Views = (() => {
       $$(".room-rect", svg).forEach((rc) => {
         rc.classList.toggle("explored", this.explored.has(rc.dataset.r));
         const rn = (s.rooms.find((r) => r.id === rc.dataset.r) || {}).name;
-        rc.classList.toggle("favorite", rn === "Salón");
+        rc.classList.toggle("favorite", false);
         rc.classList.toggle("restricted", restricted_has(s, rn));
       });
       $("#mp-room").textContent = roomName(s.position.room);
@@ -656,6 +933,7 @@ const Views = (() => {
       if (this.mounted) return; this.mounted = true;
       $("#upd-check").addEventListener("click", async () => {
         const r = await Net.api("POST", "/api/updates/check", {});
+        if (!r.available.length) { $("#upd-list").innerHTML = `<p class="empty">No hay proveedor de actualizaciones configurado.</p>`; return; }
         $("#upd-list").innerHTML = r.available.map((u) => `
           <div class="upd">${Icons.svg("sparkle")}<span>${esc(u.name)}</span><span class="kind">${u.kind}</span>
           <button class="btn sm btn-primary" data-n="${esc(u.name)}">instalar</button></div>`).join("");
@@ -665,10 +943,23 @@ const Views = (() => {
         }));
       });
       $("#bk-create").addEventListener("click", async () => { await Net.api("POST", "/api/backups", {}); toast("Backup creado 💾"); this.loadBackups(); });
-      $("#load-voice").addEventListener("click", () => toast("Voz «guardián» descargada e instalada 🎙️"));
-      $("#load-model").addEventListener("click", () => toast("Modelo de visión v0.9.5 cargado 🧠"));
+      $("#load-voice").addEventListener("click", async () => {
+        const st = await Net.api("GET", "/api/audio/status");
+        const html = '<div class="kv"><label>Piper</label><b>' + (st.tts_available ? "disponible" : "no configurado") + '</b></div>' +
+          '<div class="kv"><label>whisper.cpp</label><b>' + (st.stt_available ? "disponible" : "no configurado") + '</b></div>' +
+          '<p class="hint">Las rutas se configuran en Ajustes > Hardware / ROS 2 o mediante .env.</p>';
+        modal("Voz local", html);
+      });
+      $("#load-model").addEventListener("click", async () => {
+        const st = await Net.api("GET", "/api/models");
+        const providers = (st.providers || []).map((p) => esc(p.name) + " · " + esc(p.model || "")).join(" → ") || "ninguno";
+        const html = '<div class="kv"><label>Último proveedor</label><b>' + esc(st.last_provider) + '</b></div>' +
+          '<div class="kv"><label>Proveedores</label><b>' + providers + '</b></div>' +
+          '<p class="hint">Configura llama.cpp u Ollama en Ajustes > Cerebro IA. El fallback no finge una respuesta inteligente.</p>';
+        modal("Cerebro local", html);
+      });
       $("#changelog").innerHTML = `
-        <b>v1.0.0</b> · 30/09/2026 — Nacimiento de BAY-E: cara viva, memoria SQLite, WebSocket en tiempo real.<br>
+        <b>v1.1.0-dev</b> · Núcleo real: model router local, World Model, OpenCV, Safety Governor, Guardian, salud y ROS 2 opcional.<br>\n        <b>v1.0.0</b> · 30/09/2026 — Nacimiento de BAY-E: cara viva, memoria SQLite, WebSocket en tiempo real.<br>
         <b>v0.9.4</b> — Módulo de visión: detección de personas, animales y movimiento.<br>
         <b>v0.8.1</b> — Escucha STT preparada para Whisper local.<br>
         <b>v0.7.3</b> — Mapa del hogar y rutas base (puerto ROS 2 listo).`;
@@ -703,7 +994,8 @@ const Views = (() => {
   /* ═══════════════════════ AJUSTES ═══════════════════════ */
   const settings = {
     sections: [
-      { id: "identity", name: "Identidad", icon: "sparkle" }, { id: "audio", name: "Audio y voz", icon: "voice" },
+      { id: "identity", name: "Identidad", icon: "sparkle" }, { id: "ai", name: "Cerebro IA", icon: "brain" },
+      { id: "system", name: "Sistema", icon: "cpu" }, { id: "audio", name: "Audio y voz", icon: "voice" },
       { id: "vision", name: "Visión", icon: "eye" }, { id: "personality", name: "Personalidad", icon: "heart" },
       { id: "autonomy", name: "Autonomía", icon: "compass" }, { id: "security", name: "Seguridad", icon: "shield" },
       { id: "hardware", name: "Hardware / ROS 2", icon: "cpu" }, { id: "privacy", name: "Privacidad", icon: "key" },
@@ -718,12 +1010,14 @@ const Views = (() => {
     refresh(s) { this.st = s.settings; if ($("#view-settings").classList.contains("is-active")) this.render(); },
     fields: {
       identity: [["name", "Nombre", "text"], ["species", "Especie", "text"], ["birthday", "Nacimiento", "text"], ["voice", "Voz", "select:cálida · suave,juguetona,serena,guardián,piloto"], ["language", "Idioma", "select:es,ca,en,fr"], ["personality", "Arquetipo", "select:baymax,walle,personalizado"]],
+      ai: [["provider_order", "Orden de proveedores", "text"], ["llama_url", "URL llama.cpp", "text"], ["llama_model", "Modelo llama.cpp", "text"], ["ollama_url", "URL Ollama", "text"], ["ollama_model", "Modelo Ollama", "text"]],
+      system: [["demo_mode", "Modo demo sintético", "bool"], ["allow_synthetic_events", "Permitir eventos sintéticos", "bool"]],
       audio: [["tts_enabled", "Voz activada", "bool"], ["wake_word", "Palabra de activación", "text"], ["volume", "Volumen (0-1)", "num"], ["rate", "Velocidad (0.5-2)", "num"]],
       vision: [["camera_enabled", "Cámara activada", "bool"], ["fps", "FPS", "num"], ["detect_people", "Detectar personas", "bool"], ["detect_animals", "Detectar animales", "bool"], ["save_captures", "Guardar capturas", "bool"]],
       personality: [["auto_emotions", "Emociones automáticas", "bool"], ["curiosity_level", "Curiosidad base", "num"], ["affection", "Cariño", "num"], ["humor", "Sentido del humor", "num"], ["handicap_speak", "Habla enternecedora", "bool"]],
       autonomy: [["enabled", "Autonomía general", "bool"], ["explore_when_bored", "Explorar si se aburre", "bool"], ["sleep_at_night", "Dormir de noche", "bool"], ["return_base_battery", "Umbral batería (%)", "num"]],
       security: [["max_speed", "Velocidad máxima (m/s)", "num"], ["stairs_allowed", "Permitir escaleras", "bool"], ["night_patrol", "Patrulla nocturna", "bool"], ["child_lock", "Bloqueo infantil", "bool"]],
-      hardware: [["ros2_bridge", "Puente ROS 2", "bool"], ["ros_domain_id", "ROS_DOMAIN_ID", "num"], ["model_paths.llm", "Ruta modelo LLM", "text"], ["model_paths.vision", "Ruta modelo visión", "text"], ["model_paths.tts", "Ruta modelo TTS", "text"], ["model_paths.stt", "Ruta modelo STT", "text"]],
+      hardware: [["ros2_bridge", "Puente ROS 2", "bool"], ["ros_domain_id", "ROS_DOMAIN_ID", "num"], ["base_pose.x", "Base X (m)", "num"], ["base_pose.y", "Base Y (m)", "num"], ["base_pose.yaw", "Base yaw (rad)", "num"], ["model_paths.llm", "Ruta modelo LLM", "text"], ["model_paths.vision", "Ruta modelo visión", "text"], ["model_paths.tts", "Ruta modelo TTS", "text"], ["model_paths.stt", "Ruta modelo STT", "text"]],
       privacy: [["private_mode", "Modo privado", "bool"], ["retention_days", "Retención (días)", "num"], ["restricted_zones", "Zonas restringidas (coma)", "list"], ["forbidden_objects", "Objetos prohibidos (coma)", "list"]],
     },
     render() {
@@ -743,8 +1037,11 @@ const Views = (() => {
           if (el.type === "number") val = parseFloat(val) || 0;
           if (el.tagName === "SELECT" && /^\d/.test(val)) val = parseInt(val);
           const parts = el.dataset.k.split(".");
-          if (parts.length === 1) patch[parts[0]] = val;
-          else { (patch[parts[0]] ||= {})[parts[1]] = val; }
+          let cur = patch;
+          parts.forEach((part, i) => {
+            if (i === parts.length - 1) cur[part] = val;
+            else cur = (cur[part] ||= {});
+          });
         });
         await Net.api("PUT", `/api/settings/${this.cur}`, patch);
         toast("Configuración guardada ⚙️");
@@ -835,23 +1132,28 @@ const Views = (() => {
     STATE = s;
     // hero / chips
     $("#chip-mode b").textContent = s.mode_label;
-    $("#chip-batt").textContent = Math.round(s.battery) + "%";
-    $(".chip-batt").classList.toggle("low", s.battery < 20);
-    $(".chip-batt").classList.toggle("charging", s.charging);
+    const battKnown = s.battery_source && s.battery_source !== "unavailable";
+    $("#chip-batt").textContent = battKnown ? Math.round(s.battery) + "%" : "—";
+    $(".chip-batt").classList.toggle("low", battKnown && s.battery < 20);
+    $(".chip-batt").classList.toggle("charging", battKnown && s.charging);
     $("#chip-autonomy b").textContent = "autonomía " + (s.autonomy ? "on" : "off");
     $("#hero-activity").textContent = s.activity === "idle" ? s.mode_label.toLowerCase() : s.activity;
     $("#mobar-mode").textContent = s.mode_label;
     $("#btn-private").classList.toggle("on", s.private_mode);
     $$("#hero-sensors .sensor").forEach((el) => el.classList.toggle("live", !!s.sensors[el.dataset.k]));
-    $$("#hero-sensors .sensor").forEach((el) => el.onclick = () => Net.command("sensor", { sensor: el.dataset.k, on: !s.sensors[el.dataset.k] }));
+    $("#hero-sensors .sensor").forEach((el) => el.onclick = () => {
+      if (el.dataset.k === "camera") App.go("vision");
+      else if (el.dataset.k === "mic" || el.dataset.k === "tts") App.go("chat");
+      else if (el.dataset.k === "memory") App.go("memory");
+    });
     // caras vivas
     Face.update(App.faceMain, s.expression);
     Face.update(App.faceMini, s.expression);
     // vistas
-    dashboard.refresh(s); heart.refresh(s); vision.refresh(s); control.refresh(s);
+    chat.syncState(s); dashboard.refresh(s); heart.refresh(s); vision.refresh(s); control.refresh(s);
     mind.refresh(s); homeMap.refresh(s); modules.refresh(s); settings.refresh(s); privacy.refresh(s);
     if ($("#view-memory").classList.contains("is-active")) memory.load();
   }
 
-  return { get STATE() { return STATE; }, applyState, chat, memory, heart, vision, control, mind, tasks, homeMap, modules, settings, privacy, logs, dashboard, modal, toast, esc, fmtDT, fmtT, MEM_TYPES };
+  return { get STATE() { return STATE; }, applyState, chat, memory, heart, health, vision, control, mind, tasks, homeMap, modules, settings, privacy, logs, dashboard, modal, toast, esc, fmtDT, fmtT, MEM_TYPES };
 })();

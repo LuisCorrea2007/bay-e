@@ -35,6 +35,7 @@
   <button class="rail-btn" data-nav="chat" title="Chat"><i data-icon="chat"></i><span>Chat</span></button>
   <button class="rail-btn" data-nav="memory" title="Memoria"><i data-icon="brain"></i><span>Memoria</span></button>
   <button class="rail-btn" data-nav="heart" title="Corazón emocional"><i data-icon="heart"></i><span>Corazón</span></button>
+  <button class="rail-btn" data-nav="health" title="Salud y bienestar"><i data-icon="pulse"></i><span>Salud</span></button>
   <button class="rail-btn" data-nav="vision" title="Visión"><i data-icon="eye"></i><span>Visión</span></button>
   <button class="rail-btn" data-nav="control" title="Control"><i data-icon="gamepad"></i><span>Control</span></button>
   <button class="rail-btn" data-nav="mind" title="Qué está pensando"><i data-icon="bulb"></i><span>Mente</span></button>
@@ -142,6 +143,7 @@
         <div class="chat-head">
           <div class="card-h"><i data-icon="chat"></i><h3>Conversación con {{ name }}</h3></div>
           <div class="chat-indicators">
+            <button class="btn btn-ghost sm" id="chat-wake" title="Escucha local por palabra de activación"><i data-icon="mic"></i>«BAY-E»</button>
             <span class="ci" data-ci="listening"><i data-icon="mic"></i>escuchando</span>
             <span class="ci" data-ci="thinking"><i data-icon="bulb"></i>pensando</span>
             <span class="ci" data-ci="speaking"><i data-icon="speaker"></i>hablando</span>
@@ -207,6 +209,47 @@
       </div>
     </article>
 
+    <!-- ─────────── SALUD / BIENESTAR ─────────── -->
+    <article class="view" id="view-health">
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-h"><i data-icon="pulse"></i><h3>Registrar medición</h3></div>
+          <p class="hint">BAY-E guarda mediciones y tendencias. Esta sección no diagnostica ni prescribe.</p>
+          <label class="fld"><span>Métrica</span>
+            <select id="health-metric">
+              <option value="heart_rate">Frecuencia cardíaca</option>
+              <option value="spo2">SpO₂</option>
+              <option value="temperature">Temperatura</option>
+              <option value="respiratory_rate">Frecuencia respiratoria</option>
+              <option value="weight">Peso</option>
+              <option value="custom">Otra</option>
+            </select>
+          </label>
+          <div class="row2">
+            <label class="fld"><span>Valor</span><input id="health-value" type="number" step="any" placeholder="0"></label>
+            <label class="fld"><span>Unidad</span><input id="health-unit" value="bpm"></label>
+          </div>
+          <label class="fld"><span>Persona / perfil (opcional)</span><input id="health-person" placeholder="perfil_local"></label>
+          <button class="btn btn-primary" id="health-save"><i data-icon="save"></i>Guardar medición</button>
+          <p class="hint warn">Ante síntomas graves o una emergencia, BAY-E debe priorizar ayuda humana/profesional y servicios de emergencia, no un diagnóstico autónomo.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><i data-icon="pulse"></i><h3>Tendencia descriptiva</h3></div>
+          <div class="kv"><label>Última</label><b id="health-latest">—</b></div>
+          <div class="kv"><label>Media</label><b id="health-mean">—</b></div>
+          <div class="kv"><label>Cambio</label><b id="health-delta">—</b></div>
+          <div class="kv"><label>Muestras</label><b id="health-count">0</b></div>
+          <p class="hint" id="health-notice">Selecciona una métrica para ver su historial.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><i data-icon="clock"></i><h3>Mediciones recientes</h3></div>
+          <div id="health-recent"><p class="empty">sin mediciones registradas</p></div>
+        </div>
+      </div>
+    </article>
+
     <!-- ─────────── VISIÓN ─────────── -->
     <article class="view" id="view-vision">
       <div class="vision-grid">
@@ -216,7 +259,7 @@
             <button class="btn btn-ghost sm" id="cam-toggle"><i data-icon="power"></i>sensor</button>
           </div>
           <div class="feed" id="feed">
-            <img id="feed-img" src="/static/camera_sim.svg" alt="vista simulada">
+            <img id="feed-img" src="/static/camera_sim.svg" alt="sin señal de cámara">
             <div class="feed-boxes" id="feed-boxes"></div>
             <div class="feed-scan"></div>
             <div class="feed-off" id="feed-off" hidden><i data-icon="eyeoff"></i>Cámara desactivada o modo privado activo</div>
@@ -225,6 +268,7 @@
             <button class="btn btn-primary sm" id="det-save"><i data-icon="brain"></i>Guardar como memoria</button>
             <button class="btn btn-ghost sm" id="det-star"><i data-icon="star"></i>Marcar importante</button>
             <button class="btn btn-ghost sm" id="det-ignore"><i data-icon="x"></i>Ignorar</button>
+            <button class="btn btn-ghost sm" id="face-enroll"><i data-icon="users"></i>Aprender persona</button>
           </div>
         </div>
         <div class="card det-card">
@@ -232,6 +276,8 @@
           <div class="det-list" id="det-list"></div>
           <div class="card-h sub"><i data-icon="users"></i><h3>Personas · Objetos · Animales</h3></div>
           <div class="tag-cloud" id="tag-cloud"></div>
+          <div class="card-h sub"><i data-icon="users"></i><h3>Personas aprendidas con permiso</h3></div>
+          <div id="face-profiles"><p class="empty">sin perfiles locales</p></div>
         </div>
       </div>
     </article>
@@ -255,6 +301,29 @@
               <div class="slider"><label>Yaw</label><input type="range" min="-100" max="100" value="0" id="yaw"></div>
               <div class="slider"><label>Pitch</label><input type="range" min="-100" max="100" value="0" id="pitch"></div>
             </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><i data-icon="cpu"></i><h3>Brazos y pinzas</h3></div>
+          <p class="hint">Objetivos normalizados. Safety Governor y el microcontrolador conservan la autoridad final.</p>
+          <div class="arm-panel">
+            <div>
+              <b>Brazo izquierdo</b>
+              <div class="slider"><label>Hombro</label><input id="arm-l-shoulder" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Codo</label><input id="arm-l-elbow" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Pinza</label><input id="arm-l-gripper" type="range" min="0" max="100" value="0"></div>
+            </div>
+            <div>
+              <b>Brazo derecho</b>
+              <div class="slider"><label>Hombro</label><input id="arm-r-shoulder" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Codo</label><input id="arm-r-elbow" type="range" min="-100" max="100" value="0"></div>
+              <div class="slider"><label>Pinza</label><input id="arm-r-gripper" type="range" min="0" max="100" value="0"></div>
+            </div>
+          </div>
+          <div class="row2">
+            <button class="btn danger" id="robot-estop"><i data-icon="stop"></i>PARADA DE EMERGENCIA</button>
+            <button class="btn btn-ghost" id="robot-estop-clear"><i data-icon="check"></i>Liberar E-Stop</button>
           </div>
         </div>
 
@@ -314,13 +383,13 @@
         <aside class="card map-side">
           <h3 class="side-title">Información espacial</h3>
           <div class="kv"><label>Ubicación estimada</label><b id="mp-room">—</b></div>
-          <div class="kv"><label>Zona favorita</label><b>Salón</b></div>
+          <div class="kv"><label>Zona favorita</label><b>—</b></div>
           <div class="kv"><label>Objetos importantes</label><b id="mp-objects">—</b></div>
           <div class="zones">
             <label>Zonas exploradas</label>
             <div class="zone-chips" id="mp-zones"></div>
           </div>
-          <div class="kv"><label>Estación base</label><b>Pasillo este · cargador ⚡</b></div>
+          <div class="kv"><label>Estación base</label><b>No configurada</b></div>
         </aside>
       </div>
     </article>
@@ -331,7 +400,7 @@
         <div class="card ver-card">
           <div class="card-h"><i data-icon="box"></i><h3>Versión</h3></div>
           <div class="ver-big">BAY-E <b id="mod-version">v{{ version }}</b></div>
-          <p class="hint">Núcleo FastAPI + cerebro simulado. Los módulos reales sustituyen solo sus adaptadores.</p>
+          <p class="hint">Núcleo local BAY-E + adaptadores modulares. El estado indica qué capacidades reales están disponibles.</p>
           <button class="btn btn-primary w100" id="upd-check"><i data-icon="refresh"></i>Comprobar actualizaciones</button>
           <div class="upd-list" id="upd-list"></div>
           <div class="card-h sub"><i data-icon="voice"></i><h3>Voces y modelos</h3></div>

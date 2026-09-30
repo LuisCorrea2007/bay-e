@@ -1,5 +1,25 @@
-(empty)node_modules/
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Runtime data (local, private)
+data/*.db
+data/*.db-*
+data/camera/
+data/backups/
+*.log
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Optional frontend artifacts
+node_modules/
 .next/
 dist/
 build/
-*.log

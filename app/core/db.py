@@ -88,6 +88,67 @@ CREATE TABLE IF NOT EXISTS history (
     ts REAL NOT NULL,
     data TEXT NOT NULL                -- JSON snapshot de emociones/estado
 );
+
+CREATE TABLE IF NOT EXISTS world_entities (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    label_key TEXT NOT NULL,
+    source TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.5,
+    attrs TEXT NOT NULL DEFAULT '{}',
+    first_seen REAL NOT NULL,
+    last_seen REAL NOT NULL,
+    UNIQUE(kind, label_key)
+);
+CREATE INDEX IF NOT EXISTS idx_world_entity_kind ON world_entities(kind);
+CREATE INDEX IF NOT EXISTS idx_world_entity_seen ON world_entities(last_seen DESC);
+
+CREATE TABLE IF NOT EXISTS world_relations (
+    id TEXT PRIMARY KEY,
+    subject_id TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.5,
+    attrs TEXT NOT NULL DEFAULT '{}',
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    UNIQUE(subject_id, predicate, object_id)
+);
+
+CREATE TABLE IF NOT EXISTS health_measurements (
+    id TEXT PRIMARY KEY,
+    metric TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    source TEXT NOT NULL,
+    person_id TEXT DEFAULT '',
+    quality REAL NOT NULL DEFAULT 1.0,
+    ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_health_metric_ts ON health_measurements(metric, ts DESC);
+
+CREATE TABLE IF NOT EXISTS observations (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    room TEXT DEFAULT '',
+    source TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.5,
+    ts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_observation_ts ON observations(ts DESC);
+CREATE INDEX IF NOT EXISTS idx_observation_pattern ON observations(kind, label, room, ts DESC);
+
+CREATE TABLE IF NOT EXISTS face_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    embedding TEXT NOT NULL,
+    consent_ts REAL NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
 """
 
 
@@ -225,7 +286,7 @@ def merge_memories(primary_id: str, secondary_id: str) -> Optional[dict]:
     p, s = get_memory(primary_id), get_memory(secondary_id)
     if not p or not s:
         return None
-    rel = list(set(p["relations"] + [primary_id]))
+    rel = list(set(p["relations"] + [secondary_id]))
     out = update_memory(primary_id,
                         detail=(p["detail"] + ("\n" if p["detail"] else "") + f"[fusionada] {s['content']}").strip(),
                         relations=rel,
@@ -436,3 +497,247 @@ def get_history(limit: int = 240) -> list[dict]:
         d["data"] = json.loads(d["data"])
         out.append(d)
     return out
+
+# ----------------------------------------------------------------- world model
+def world_upsert_entity(*, entity_id: Optional[str], kind: str, label: str, source: str,
+                        confidence: float = 0.7, attrs: Optional[dict] = None) -> dict:
+    now = time.time()
+    label_key = label.strip().casefold()
+    with _LOCK:
+        conn = _conn()
+        old = conn.execute(
+            "SELECT * FROM world_entities WHERE kind=? AND label_key=?",
+            (kind, label_key),
+        ).fetchone()
+        if old:
+            merged_attrs = json.loads(old["attrs"] or "{}")
+            merged_attrs.update(attrs or {})
+            conf = max(float(old["confidence"]), float(confidence))
+            conn.execute(
+                "UPDATE world_entities SET source=?, confidence=?, attrs=?, last_seen=? WHERE id=?",
+                (source, conf, json.dumps(merged_attrs), now, old["id"]),
+            )
+            eid = old["id"]
+        else:
+            eid = entity_id or ("e_" + uuid.uuid4().hex[:10])
+            conn.execute(
+                "INSERT INTO world_entities (id,kind,label,label_key,source,confidence,attrs,first_seen,last_seen) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (eid, kind, label, label_key, source, confidence, json.dumps(attrs or {}), now, now),
+            )
+        conn.commit()
+        row = conn.execute("SELECT * FROM world_entities WHERE id=?", (eid,)).fetchone()
+        conn.close()
+    out = dict(row)
+    out["attrs"] = json.loads(out.get("attrs") or "{}")
+    return out
+
+
+def world_upsert_relation(*, relation_id: Optional[str], subject_id: str, predicate: str,
+                          object_id: str, source: str, confidence: float = 0.7,
+                          attrs: Optional[dict] = None) -> dict:
+    now = time.time()
+    with _LOCK:
+        conn = _conn()
+        old = conn.execute(
+            "SELECT * FROM world_relations WHERE subject_id=? AND predicate=? AND object_id=?",
+            (subject_id, predicate, object_id),
+        ).fetchone()
+        if old:
+            merged_attrs = json.loads(old["attrs"] or "{}")
+            merged_attrs.update(attrs or {})
+            rid = old["id"]
+            conn.execute(
+                "UPDATE world_relations SET source=?,confidence=?,attrs=?,updated_at=? WHERE id=?",
+                (source, max(float(old["confidence"]), float(confidence)), json.dumps(merged_attrs), now, rid),
+            )
+        else:
+            rid = relation_id or ("r_" + uuid.uuid4().hex[:10])
+            conn.execute(
+                "INSERT INTO world_relations (id,subject_id,predicate,object_id,source,confidence,attrs,created_at,updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (rid, subject_id, predicate, object_id, source, confidence, json.dumps(attrs or {}), now, now),
+            )
+        conn.commit()
+        row = conn.execute("SELECT * FROM world_relations WHERE id=?", (rid,)).fetchone()
+        conn.close()
+    out = dict(row)
+    out["attrs"] = json.loads(out.get("attrs") or "{}")
+    return out
+
+
+def world_list_entities(kind: str = "", limit: int = 250) -> list[dict]:
+    sql = "SELECT * FROM world_entities"
+    args: list[Any] = []
+    if kind:
+        sql += " WHERE kind=?"
+        args.append(kind)
+    sql += " ORDER BY last_seen DESC LIMIT ?"
+    args.append(limit)
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["attrs"] = json.loads(d.get("attrs") or "{}")
+        out.append(d)
+    return out
+
+
+def world_list_relations(limit: int = 500) -> list[dict]:
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute("SELECT * FROM world_relations ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["attrs"] = json.loads(d.get("attrs") or "{}")
+        out.append(d)
+    return out
+
+
+# ----------------------------------------------------------------- health measurements
+def health_add_measurement(*, metric: str, value: float, unit: str, source: str,
+                           person_id: str = "", quality: float = 1.0) -> dict:
+    item = {
+        "id": "hm_" + uuid.uuid4().hex[:10],
+        "metric": metric,
+        "value": float(value),
+        "unit": unit,
+        "source": source,
+        "person_id": person_id,
+        "quality": float(quality),
+        "ts": time.time(),
+    }
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO health_measurements (id,metric,value,unit,source,person_id,quality,ts) VALUES (?,?,?,?,?,?,?,?)",
+            tuple(item[k] for k in ("id","metric","value","unit","source","person_id","quality","ts")),
+        )
+        conn.commit()
+        conn.close()
+    return item
+
+
+def health_list_measurements(*, metric: str = "", person_id: str = "", limit: int = 100) -> list[dict]:
+    sql = "SELECT * FROM health_measurements WHERE 1=1"
+    args: list[Any] = []
+    if metric:
+        sql += " AND metric=?"; args.append(metric)
+    if person_id:
+        sql += " AND person_id=?"; args.append(person_id)
+    sql += " ORDER BY ts DESC LIMIT ?"; args.append(limit)
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    return [dict(r) for r in rows]
+
+# ----------------------------------------------------------------- observations / routine learning
+def add_observation(*, kind: str, label: str, room: str = "", source: str = "sensor",
+                    confidence: float = 0.5, ts: Optional[float] = None) -> dict:
+    item = {
+        "id": "obs_" + uuid.uuid4().hex[:10],
+        "kind": kind,
+        "label": label,
+        "room": room,
+        "source": source,
+        "confidence": float(confidence),
+        "ts": float(ts or time.time()),
+    }
+    with _LOCK:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO observations (id,kind,label,room,source,confidence,ts) VALUES (?,?,?,?,?,?,?)",
+            tuple(item[k] for k in ("id","kind","label","room","source","confidence","ts")),
+        )
+        conn.commit()
+        conn.close()
+    return item
+
+
+def list_observations(*, since: float = 0.0, kind: str = "", label: str = "",
+                      room: str = "", limit: int = 1000) -> list[dict]:
+    sql = "SELECT * FROM observations WHERE ts>=?"
+    args: list[Any] = [float(since)]
+    if kind:
+        sql += " AND kind=?"; args.append(kind)
+    if label:
+        sql += " AND label=?"; args.append(label)
+    if room:
+        sql += " AND room=?"; args.append(room)
+    sql += " ORDER BY ts DESC LIMIT ?"; args.append(limit)
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute(sql, args).fetchall()
+        conn.close()
+    return [dict(r) for r in rows]
+
+# ----------------------------------------------------------------- opt-in face identity profiles
+def face_upsert_profile(*, name: str, embedding: list[float], consent_ts: float) -> dict:
+    now = time.time()
+    with _LOCK:
+        conn = _conn()
+        old = conn.execute("SELECT id,created_at FROM face_profiles WHERE name=?", (name,)).fetchone()
+        if old:
+            fid = old["id"]
+            conn.execute(
+                "UPDATE face_profiles SET embedding=?,consent_ts=?,updated_at=? WHERE id=?",
+                (json.dumps(embedding), consent_ts, now, fid),
+            )
+        else:
+            fid = "face_" + uuid.uuid4().hex[:10]
+            conn.execute(
+                "INSERT INTO face_profiles (id,name,embedding,consent_ts,created_at,updated_at) VALUES (?,?,?,?,?,?)",
+                (fid, name, json.dumps(embedding), consent_ts, now, now),
+            )
+        conn.commit()
+        row = conn.execute("SELECT * FROM face_profiles WHERE id=?", (fid,)).fetchone()
+        conn.close()
+    out = dict(row)
+    out["embedding"] = json.loads(out["embedding"])
+    return out
+
+
+def face_list_profiles() -> list[dict]:
+    with _LOCK:
+        conn = _conn()
+        rows = conn.execute("SELECT * FROM face_profiles ORDER BY name").fetchall()
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["embedding"] = json.loads(d["embedding"])
+        out.append(d)
+    return out
+
+
+def face_delete_profile(profile_id: str) -> bool:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM face_profiles WHERE id=?", (profile_id,)).rowcount
+        conn.commit()
+        conn.close()
+    return n > 0
+
+
+def face_delete_by_name(name: str) -> int:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM face_profiles WHERE name LIKE ?", (name,)).rowcount
+        conn.commit()
+        conn.close()
+    return n
+
+
+def face_purge() -> int:
+    with _LOCK:
+        conn = _conn()
+        n = conn.execute("DELETE FROM face_profiles").rowcount
+        conn.commit()
+        conn.close()
+    return n

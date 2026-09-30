@@ -16,6 +16,7 @@ const App = (() => {
     // cargas perezosas por vista
     if (view === "memory") V.memory.load();
     if (view === "tasks") V.tasks.load();
+    if (view === "health") V.health.load();
     if (view === "logs") V.logs.load();
     if (view === "settings") V.settings.render();
     if (view === "privacy") V.privacy.refresh(V.STATE);

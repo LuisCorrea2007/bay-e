@@ -9,16 +9,32 @@ interior de las funciones sin cambiar el contrato HTTP.
 """
 import json
 import time
+import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ..core import db
 from ..core.brain import BAYE, EMO_KEYS, MODES
 from ..core.config import APP_VERSION, BACKUP_DIR, CAM_DIR, DEFAULT_SETTINGS
 from ..core.ws import broadcast_state
+from ..core.events import BUS
+from ..core.guardian import GUARDIAN
+from ..core.diagnostics import snapshot as diagnostics_snapshot
+from ..core.privacy import enforce_retention
+from ..adapters.audio import AUDIO
+from ..adapters.face_identity import FACE_IDENTITY
+from ..adapters.vision import VISION
+from ..autonomy.skills import SKILLS
+from ..autonomy.scheduler import next_occurrence
+from ..cognition.agents import manifest as agent_manifest
+from ..cognition.model_router import MODELS
+from ..core.workflows import WORKFLOWS
+from ..health.service import record as health_record, trend as health_trend
+from ..learning.routines import discover as discover_routines
+from ..world.model import snapshot as world_snapshot
 
 router = APIRouter(prefix="/api")
 
@@ -45,17 +61,19 @@ def chat_history(limit: int = Query(200, ge=1, le=1000)):
 
 
 @router.post("/chat/send")
-def chat_send(payload: dict = Body(...)):
-    """Envío por REST (fallback sin WS): responde de forma síncrona."""
+async def chat_send(payload: dict = Body(...)):
+    """REST fallback using the same real conversation engine as WebSocket."""
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "mensaje vacío")
     msg = db.add_message("user", text)
-    reply, emotion = BAYE.reply(text)
+    BAYE.hear(text)
+    BAYE.set_activity("thinking", 2.0)
+    reply, emotion, model_reply = await BAYE.generate_reply(text)
     bmsg = db.add_message("baye", reply, emotion=emotion)
-    BAYE.set_activity("speaking", 2.5)
+    BAYE.set_activity("speaking", max(2.0, len(reply) / 12))
     broadcast_state()
-    return {"user": msg, "baye": bmsg}
+    return {"user": msg, "baye": bmsg, "model": {"provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded}}
 
 
 @router.post("/chat/flag")
@@ -217,7 +235,11 @@ def tasks_update(tid: str, payload: dict = Body(...)):
         raise HTTPException(404, "tarea no encontrada")
     if payload.get("status") == "done":
         t["done_log"].append(time.strftime("%Y-%m-%d %H:%M"))
-        db.update_task(tid, done_log=t["done_log"])
+        if t.get("repeat"):
+            nxt = next_occurrence(float(t.get("scheduled_at") or time.time()), t["repeat"])
+            t = db.update_task(tid, done_log=t["done_log"], scheduled_at=nxt, status="pending")
+        else:
+            t = db.update_task(tid, done_log=t["done_log"]) or t
     return {"ok": True, "task": t}
 
 
@@ -238,7 +260,16 @@ def settings_get():
 def settings_put(section: str, payload: dict = Body(...)):
     if section not in BAYE.s["settings"]:
         raise HTTPException(404, f"sección desconocida: {section}")
-    merged = {**BAYE.s["settings"][section], **payload}
+    def deep_merge(base: dict, patch: dict) -> dict:
+        out = dict(base)
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(out.get(key), dict):
+                out[key] = deep_merge(out[key], value)
+            else:
+                out[key] = value
+        return out
+
+    merged = deep_merge(BAYE.s["settings"][section], payload)
     BAYE.s["settings"][section] = merged
     db.set_setting(f"settings:{section}", merged)
     # efectos inmediatos
@@ -246,6 +277,8 @@ def settings_put(section: str, payload: dict = Body(...)):
         BAYE.s["autonomy"] = bool(merged.get("enabled"))
     if section == "privacy":
         BAYE.s["private_mode"] = bool(merged.get("private_mode"))
+    if section == "system":
+        BAYE.s["demo_mode"] = bool(merged.get("demo_mode", False))
     if section == "identity":
         pass  # el frontend re-pinta nombre/voz al recibir state
     db.log("info", "settings", f"Configuración actualizada: {section}", json.dumps(payload)[:300])
@@ -296,18 +329,13 @@ def modules_toggle(mid: str, payload: dict = Body(...)):
 
 @router.post("/updates/check")
 def updates_check():
-    """Simulación de comprobación. Real: consultar repositorio de módulos/voces."""
-    return {"ok": True, "current": APP_VERSION,
-            "available": [{"name": "Voz «guardián» v2", "kind": "voice"},
-                          {"name": "Modelo de visión v0.9.5", "kind": "model"},
-                          {"name": "BAY-E core v1.0.1", "kind": "system"}]}
+    """No inventa actualizaciones: un proveedor real se conectará más adelante."""
+    return {"ok": True, "current": APP_VERSION, "available": [], "source": "not_configured"}
 
 
 @router.post("/updates/install")
 def updates_install(payload: dict = Body(...)):
-    name = payload.get("name", "")
-    db.log("info", "updates", f"Actualización instalada (simulada): {name}", "")
-    return {"ok": True, "installed": name}
+    raise HTTPException(409, "No hay proveedor de actualizaciones configurado. BAY-E no simulará una instalación.")
 
 
 @router.post("/backups")
@@ -353,18 +381,229 @@ def privacy_purge(payload: dict = Body(...)):
         crit["before"] = float(payload.get("timestamp", 0))
     elif mode != "all":
         raise HTTPException(400, "modo desconocido")
+    face_deleted = 0
     if mode == "all":
         conn_n = len(db.export_memories())
-        db.delete_memories_by()          # borra todo (sin filtros)
+        db.delete_memories_by()          # borra toda la memoria textual
+        face_deleted = db.face_purge()   # los embeddings de identidad son memoria personal
     else:
         conn_n = db.delete_memories_by(**crit)
-    db.log("sensitive", "privacy", f"Purga de memoria ({mode}): {conn_n} elementos borrados", json.dumps(payload))
+        if mode == "person" and payload.get("person"):
+            face_deleted = db.face_delete_by_name(str(payload["person"]))
+    db.log("sensitive", "privacy", f"Purga de memoria ({mode}): {conn_n} memorias, {face_deleted} perfiles biométricos", json.dumps(payload))
     BAYE.s["last_memory"] = None
     broadcast_state()
-    return {"ok": True, "deleted": conn_n}
+    return {"ok": True, "deleted": conn_n, "face_profiles_deleted": face_deleted}
 
 
 # ================================================================ histórico emociones
 @router.get("/history")
 def history(limit: int = 240):
     return {"history": db.get_history(limit)}
+
+# ================================================================ núcleo / observabilidad
+@router.get("/core/events")
+def core_events(limit: int = Query(100, ge=1, le=500)):
+    return {"events": BUS.recent(limit)}
+
+
+@router.get("/guardian")
+def guardian_state():
+    return GUARDIAN.snapshot()
+
+# ================================================================ capacidades reales
+@router.get("/models")
+def models_state():
+    return MODELS.status()
+
+
+@router.get("/skills")
+def skills_list():
+    return {"skills": SKILLS.list()}
+
+
+@router.get("/world")
+def world_get():
+    return world_snapshot()
+
+
+@router.get("/vision/status")
+def vision_status():
+    return {"available": VISION.available, "private_mode": BAYE.s["private_mode"], "camera_enabled": BAYE.s["sensors"]["camera"]}
+
+
+@router.post("/vision/observe")
+async def vision_observe(frame: UploadFile = File(...)):
+    if BAYE.s["private_mode"]:
+        raise HTTPException(403, "modo privado activo")
+    if not BAYE.s["sensors"]["camera"]:
+        raise HTTPException(409, "sensor de cámara desactivado")
+    raw = await frame.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "fotograma demasiado grande")
+    try:
+        observation = VISION.observe_jpeg(raw)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    for det in observation.get("detections", []):
+        BAYE.perceive_vision(det)
+    broadcast_state()
+    return observation
+
+
+@router.get("/vision/people")
+def vision_people():
+    profiles = []
+    for p in db.face_list_profiles():
+        profiles.append({
+            "id": p["id"], "name": p["name"], "consent_ts": p["consent_ts"],
+            "created_at": p["created_at"], "updated_at": p["updated_at"],
+        })
+    return {"available": FACE_IDENTITY.available, "profiles": profiles}
+
+
+@router.post("/vision/people/enroll")
+async def vision_people_enroll(
+    frame: UploadFile = File(...),
+    name: str = Form(...),
+    consent: bool = Form(False),
+):
+    if BAYE.s["private_mode"]:
+        raise HTTPException(403, "modo privado activo")
+    if not consent:
+        raise HTTPException(400, "se requiere consentimiento explícito")
+    raw = await frame.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "fotograma demasiado grande")
+    try:
+        profile = FACE_IDENTITY.enroll(name, raw, consent=True)
+    except PermissionError as exc:
+        raise HTTPException(403, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    db.log("sensitive", "vision", f"Perfil facial creado con consentimiento: {name}", f"id={profile['id']}")
+    public = {k: profile[k] for k in ("id","name","consent_ts","created_at","updated_at")}
+    return {"ok": True, "profile": public}
+
+
+@router.delete("/vision/people/{profile_id}")
+def vision_people_delete(profile_id: str):
+    ok = db.face_delete_profile(profile_id)
+    if not ok:
+        raise HTTPException(404, "perfil no encontrado")
+    db.log("sensitive", "vision", f"Perfil facial eliminado: {profile_id}", "")
+    return {"ok": True}
+
+
+@router.get("/audio/status")
+def audio_status():
+    return {"stt_available": AUDIO.stt_available, "tts_available": AUDIO.tts_available}
+
+
+@router.get("/health/measurements")
+def health_measurements(metric: str = "", person_id: str = "", limit: int = Query(50, ge=1, le=500)):
+    return {"measurements": db.health_list_measurements(metric=metric, person_id=person_id, limit=limit)}
+
+
+@router.post("/health/measurements")
+def health_measurement(payload: dict = Body(...)):
+    if not payload.get("metric") or payload.get("value") is None or not payload.get("unit"):
+        raise HTTPException(400, "metric, value y unit son obligatorios")
+    item = health_record(
+        str(payload["metric"]),
+        float(payload["value"]),
+        str(payload["unit"]),
+        source=str(payload.get("source", "user")),
+        person_id=str(payload.get("person_id", "")),
+        quality=float(payload.get("quality", 1.0)),
+    )
+    return {"ok": True, "measurement": item, "notice": "Registro descriptivo; no constituye diagnóstico."}
+
+
+@router.get("/health/trend/{metric}")
+def health_metric_trend(metric: str, person_id: str = "", limit: int = Query(30, ge=1, le=500)):
+    return health_trend(metric, person_id=person_id, limit=limit)
+
+@router.get("/agents")
+def agents_list():
+    return {"agents": agent_manifest()}
+
+
+@router.get("/workflows")
+def workflows_list():
+    return {"runs": WORKFLOWS.list_runs(), "definitions": sorted(WORKFLOWS.definitions)}
+
+
+@router.post("/workflows/start")
+def workflows_start(payload: dict = Body(...)):
+    name = str(payload.get("name", "")).strip()
+    if not name:
+        raise HTTPException(400, "nombre de workflow obligatorio")
+    try:
+        run = WORKFLOWS.start(name, payload.get("context") or {})
+    except KeyError:
+        raise HTTPException(404, "workflow no registrado")
+    return {"ok": True, "run": run}
+
+
+@router.post("/workflows/{run_id}/advance")
+def workflows_advance(run_id: str):
+    if run_id not in WORKFLOWS.runs:
+        raise HTTPException(404, "ejecución no encontrada")
+    return {"ok": True, "run": WORKFLOWS.advance(run_id)}
+
+
+@router.post("/audio/tts")
+def audio_tts(payload: dict = Body(...)):
+    text = str(payload.get("text", "")).strip()
+    if not text:
+        raise HTTPException(400, "texto vacío")
+    if len(text) > 3000:
+        raise HTTPException(413, "texto demasiado largo")
+    if not AUDIO.tts_available:
+        raise HTTPException(503, "Piper no está configurado")
+    try:
+        wav = AUDIO.synthesize_wav(text)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc))
+    return Response(content=wav, media_type="audio/wav")
+
+
+@router.post("/audio/transcribe")
+async def audio_transcribe(audio: UploadFile = File(...)):
+    if not AUDIO.stt_available:
+        raise HTTPException(503, "whisper.cpp no está configurado")
+    raw = await audio.read()
+    if len(raw) > 25_000_000:
+        raise HTTPException(413, "audio demasiado grande")
+    suffix = Path(audio.filename or "audio.wav").suffix or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(raw)
+        path = tmp.name
+    try:
+        text = AUDIO.transcribe_wav(path)
+    finally:
+        Path(path).unlink(missing_ok=True)
+    BAYE.hear(text)
+    return {"text": text}
+
+@router.get("/learning/patterns")
+def learning_patterns(days: int = Query(30, ge=1, le=365), min_count: int = Query(3, ge=2, le=100)):
+    return {"patterns": discover_routines(days=days, min_count=min_count)}
+
+# ================================================================ diagnóstico / mantenimiento
+@router.get("/diagnostics")
+def diagnostics():
+    return diagnostics_snapshot()
+
+
+@router.post("/privacy/enforce-retention")
+def privacy_enforce_retention():
+    days = int(BAYE.s["settings"]["privacy"].get("retention_days", 180))
+    result = enforce_retention(days)
+    broadcast_state()
+    return {"ok": True, **result}

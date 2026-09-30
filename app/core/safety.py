@@ -45,6 +45,14 @@ class SafetyGovernor:
                 {"dir": "stop"},
             )
 
+        if not state.get("hardware_connected", False):
+            return SafetyDecision(
+                False,
+                "Movimiento bloqueado: no existe heartbeat del cuerpo físico.",
+                "hardware_heartbeat_missing",
+                {"dir": "stop"},
+            )
+
         security = state.get("security", {})
         if security.get("status") not in ("ok", "clear"):
             return SafetyDecision(

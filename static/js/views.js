@@ -55,7 +55,7 @@ const Views = (() => {
       $("#d-activity").textContent = s.activity;
       $("#d-mode").textContent = s.mode_label;
       $("#d-emotion").textContent = s.expression.emotion.replace("_", " ");
-      const room = (s.rooms.find((r) => r.id === s.position.room) || {}).name || "—";
+      const room = (s.rooms.find((r) => r.id === s.position.room) || {}).name || s.position.room || "—";
       $("#d-room").textContent = room;
       $("#d-thought").textContent = s.last_thought;
       $("#d-decision").textContent = s.next_decision;
@@ -178,8 +178,8 @@ const Views = (() => {
             const url = URL.createObjectURL(await r.blob());
             const audio = new Audio(url);
             audio.onplay = () => { this.indicator("speaking"); Net.command("sensor", { sensor: "tts", on: true }); };
-            audio.onended = () => { this.indicator(null); URL.revokeObjectURL(url); };
-            audio.onerror = () => { this.indicator(null); URL.revokeObjectURL(url); };
+            audio.onended = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); URL.revokeObjectURL(url); };
+            audio.onerror = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); URL.revokeObjectURL(url); };
             await audio.play();
             return;
           }
@@ -189,8 +189,8 @@ const Views = (() => {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "es-ES"; u.rate = .96; u.pitch = 1.08;
       u.onstart = () => { this.indicator("speaking"); Net.command("sensor", { sensor: "tts", on: true }); };
-      u.onend = () => this.indicator(null);
-      u.onerror = () => this.indicator(null);
+      u.onend = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); };
+      u.onerror = () => { this.indicator(null); Net.command("sensor", { sensor: "tts", on: false }); };
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     },
     indicator(v) {
@@ -208,7 +208,7 @@ const Views = (() => {
       $("#chat-mic").classList.add("rec"); $("#hearing").hidden = false;
       rec.onresult = (e) => { $("#chat-input").value = e.results[0][0].transcript; this.submit(); };
       rec.onerror = () => { toast("no te escuché bien, intenta otra vez", true); };
-      rec.onend = () => { $("#chat-mic").classList.remove("rec"); $("#hearing").hidden = true; };
+      rec.onend = () => { $("#chat-mic").classList.remove("rec"); $("#hearing").hidden = true; Net.command("sensor", { sensor: "mic", on: false }); };
       rec.start();
     },
     scroll() { const sc = $("#chat-scroll"); sc.scrollTop = sc.scrollHeight; },
@@ -749,7 +749,7 @@ const Views = (() => {
 
   /* ═══════════════════════ MAPA ═══════════════════════ */
   const homeMap = {
-    mounted: false, explored: new Set(["living", "hall"]),
+    mounted: false, explored: new Set(),
     mount() { this.mounted = true; },
     refresh(s) {
       const svg = $("#map-svg");
@@ -768,7 +768,7 @@ const Views = (() => {
       $$(".room-rect", svg).forEach((rc) => {
         rc.classList.toggle("explored", this.explored.has(rc.dataset.r));
         const rn = (s.rooms.find((r) => r.id === rc.dataset.r) || {}).name;
-        rc.classList.toggle("favorite", rn === "Salón");
+        rc.classList.toggle("favorite", false);
         rc.classList.toggle("restricted", restricted_has(s, rn));
       });
       $("#mp-room").textContent = roomName(s.position.room);
@@ -985,15 +985,20 @@ const Views = (() => {
     STATE = s;
     // hero / chips
     $("#chip-mode b").textContent = s.mode_label;
-    $("#chip-batt").textContent = Math.round(s.battery) + "%";
-    $(".chip-batt").classList.toggle("low", s.battery < 20);
-    $(".chip-batt").classList.toggle("charging", s.charging);
+    const battKnown = s.battery_source && s.battery_source !== "unavailable";
+    $("#chip-batt").textContent = battKnown ? Math.round(s.battery) + "%" : "—";
+    $(".chip-batt").classList.toggle("low", battKnown && s.battery < 20);
+    $(".chip-batt").classList.toggle("charging", battKnown && s.charging);
     $("#chip-autonomy b").textContent = "autonomía " + (s.autonomy ? "on" : "off");
     $("#hero-activity").textContent = s.activity === "idle" ? s.mode_label.toLowerCase() : s.activity;
     $("#mobar-mode").textContent = s.mode_label;
     $("#btn-private").classList.toggle("on", s.private_mode);
     $$("#hero-sensors .sensor").forEach((el) => el.classList.toggle("live", !!s.sensors[el.dataset.k]));
-    $$("#hero-sensors .sensor").forEach((el) => el.onclick = () => Net.command("sensor", { sensor: el.dataset.k, on: !s.sensors[el.dataset.k] }));
+    $("#hero-sensors .sensor").forEach((el) => el.onclick = () => {
+      if (el.dataset.k === "camera") App.go("vision");
+      else if (el.dataset.k === "mic" || el.dataset.k === "tts") App.go("chat");
+      else if (el.dataset.k === "memory") App.go("memory");
+    });
     // caras vivas
     Face.update(App.faceMain, s.expression);
     Face.update(App.faceMini, s.expression);

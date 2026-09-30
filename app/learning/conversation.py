@@ -52,7 +52,14 @@ def _fold(text: str) -> str:
 
 def _safe(text: str) -> bool:
     folded = _fold(text)
-    return not any(_fold(term) in folded for term in SENSITIVE_TERMS)
+    for term in SENSITIVE_TERMS:
+        needle = _fold(term)
+        if len(needle) <= 4 and " " not in needle:
+            if re.search(r"\b" + re.escape(needle) + r"\b", folded):
+                return False
+        elif needle in folded:
+            return False
+    return True
 
 
 def _clean(value: str) -> str:

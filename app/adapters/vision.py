@@ -82,8 +82,6 @@ class VisionAdapter:
             "detections": detections,
         }
         BUS.publish("vision.frame_observed", event, source="vision")
-        for det in detections:
-            BUS.publish("vision.detection", det, source="vision")
         GUARDIAN.report("vision", "ok", f"{w}x{h}; detections={len(detections)}")
         return event
 

@@ -512,6 +512,32 @@ const Views = (() => {
       $("#det-ignore").addEventListener("click", () => {
         this.dets = this.dets.filter((d) => d.id !== this.current?.id); this.current = null; this.render(); toast("Detección ignorada");
       });
+      $("#face-enroll").addEventListener("click", () => this.enrollPerson());
+    },
+    async enrollPerson() {
+      if (!this.stream || !this.video || !this.canvas) return toast("Activa primero la cámara", true);
+      const name = prompt("Nombre de la persona que BAY-E debe reconocer:");
+      if (!name?.trim()) return;
+      const consent = confirm("¿Esta persona dio permiso explícito para que BAY-E guarde un vector facial local para reconocerla? No se guardará esta foto.");
+      if (!consent) return toast("Enrolamiento cancelado: falta consentimiento", true);
+      const maxW = 720;
+      const scale = Math.min(1, maxW / this.video.videoWidth);
+      this.canvas.width = Math.max(1, Math.round(this.video.videoWidth * scale));
+      this.canvas.height = Math.max(1, Math.round(this.video.videoHeight * scale));
+      this.canvas.getContext("2d").drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
+      this.canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const fd = new FormData();
+        fd.append("frame", blob, "enroll.jpg");
+        fd.append("name", name.trim());
+        fd.append("consent", "true");
+        try {
+          const r = await fetch("/api/vision/people/enroll", { method: "POST", body: fd });
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) return toast(body.detail || "No pude aprender ese rostro", true);
+          toast("Perfil local creado con consentimiento: " + body.profile.name);
+        } catch (e) { toast("Error al enrolar la persona", true); }
+      }, "image/jpeg", .86);
     },
     async startCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {

@@ -46,6 +46,19 @@ def handle(text: str) -> IntentResult:
         task = SKILLS.run("task.create", title=title)
         return IntentResult(True, f"He creado la tarea: {title}", "happy", {"task": task})
 
+    m = re.match(r"^(?:abre|muéstrame|muestrame|ve a|ir a)\s+(?:la\s+|el\s+)?(memoria|visión|vision|corazón|corazon|salud|control|ajustes|configuración|configuracion|tareas|mapa|privacidad|logs?)$", raw, re.I)
+    if m:
+        key = m.group(1).lower()
+        views = {
+            "memoria": "memory", "visión": "vision", "vision": "vision",
+            "corazón": "heart", "corazon": "heart", "salud": "health",
+            "control": "control", "ajustes": "settings", "configuración": "settings",
+            "configuracion": "settings", "tareas": "tasks", "mapa": "map",
+            "privacidad": "privacy", "log": "logs", "logs": "logs",
+        }
+        view = views[key]
+        return IntentResult(True, f"Abriendo {key}.", "curious", {"ui_action": {"type": "navigate", "view": view}})
+
     if re.match(r"^(?:qué|que)\s+(?:ves|conoces)\s+(?:en|del)\s+(?:mundo|entorno)[?]?$", raw, re.I):
         world = SKILLS.run("world.snapshot")
         entities = world.get("entities", [])

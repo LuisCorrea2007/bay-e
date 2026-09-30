@@ -36,5 +36,19 @@ class RobotAdapter:
         raise RuntimeError("robot navigation adapter is offline")
 
 
-ROBOT = RobotAdapter()
-GUARDIAN.report("robot", "offline", "No ROS2/hardware adapter connected")
+def _build_robot() -> RobotAdapter:
+    import os
+    if os.getenv("BAYE_ROS2_ENABLE", "0") == "1":
+        try:
+            from .ros2_robot import Ros2RobotAdapter
+            adapter = Ros2RobotAdapter()
+            if adapter.enabled:
+                GUARDIAN.report("robot", "degraded", "ROS2 loaded; waiting for hardware heartbeat")
+                return adapter
+        except Exception as exc:
+            GUARDIAN.report("robot", "offline", f"ROS2 unavailable: {exc!r}")
+    GUARDIAN.report("robot", "offline", "No physical robot adapter connected")
+    return RobotAdapter()
+
+
+ROBOT = _build_robot()

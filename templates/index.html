@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/baye.css">
+<link rel="stylesheet" href="/static/css/grok.css">
 <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="%230b1524"/><circle cx="34" cy="46" r="9" fill="%235eeaff"/><rect x="27" y="46" width="14" height="14" fill="%230b1524"/><circle cx="66" cy="46" r="9" fill="%235eeaff"/><rect x="59" y="46" width="14" height="14" fill="%230b1524"/></svg>'>
 </head>
 <body data-view="dashboard">
@@ -149,7 +150,19 @@
             <span class="ci" data-ci="speaking"><i data-icon="speaker"></i>hablando</span>
           </div>
         </div>
+        <div class="chat-presence-line">
+          <span class="chat-model-pill" id="chat-model-pill">cerebro · conectando</span>
+          <span id="chat-system-line">memoria + mundo + seguridad activos</span>
+        </div>
         <div class="chat-scroll" id="chat-scroll" aria-live="polite"></div>
+        <div class="chat-quick-actions" id="chat-quick-actions">
+          <button data-prompt="estado del sistema">Estado</button>
+          <button data-prompt="¿qué sientes?">Corazón</button>
+          <button data-prompt="¿qué ves?">Visión</button>
+          <button data-prompt="¿qué recuerdas de mí?">Memoria</button>
+          <button data-prompt="explora">Explorar</button>
+          <button data-prompt="abre ajustes">Ajustes</button>
+        </div>
         <div class="chat-composer">
           <button class="mic-btn" id="chat-mic" title="Hablar con {{ name }}"><i data-icon="mic"></i></button>
           <textarea id="chat-input" rows="1" placeholder="Escribe o usa el micrófono…"></textarea>

@@ -143,6 +143,7 @@
         <div class="chat-head">
           <div class="card-h"><i data-icon="chat"></i><h3>Conversación con {{ name }}</h3></div>
           <div class="chat-indicators">
+            <button class="btn btn-ghost sm" id="chat-wake" title="Escucha local por palabra de activación"><i data-icon="mic"></i>«BAY-E»</button>
             <span class="ci" data-ci="listening"><i data-icon="mic"></i>escuchando</span>
             <span class="ci" data-ci="thinking"><i data-icon="bulb"></i>pensando</span>
             <span class="ci" data-ci="speaking"><i data-icon="speaker"></i>hablando</span>
@@ -275,6 +276,8 @@
           <div class="det-list" id="det-list"></div>
           <div class="card-h sub"><i data-icon="users"></i><h3>Personas · Objetos · Animales</h3></div>
           <div class="tag-cloud" id="tag-cloud"></div>
+          <div class="card-h sub"><i data-icon="users"></i><h3>Personas aprendidas con permiso</h3></div>
+          <div id="face-profiles"><p class="empty">sin perfiles locales</p></div>
         </div>
       </div>
     </article>

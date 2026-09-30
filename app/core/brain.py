@@ -25,6 +25,8 @@ from .config import APP_VERSION, DEFAULT_MODULES, DEFAULT_SETTINGS
 from app.autonomy.engine import AUTONOMY
 from app.autonomy.scheduler import SCHEDULER
 from app.cognition.conversation import respond as conversation_respond
+from app.cognition.chat_commands import parse as parse_chat_command
+from app.cognition.model_router import ModelReply
 from app.learning.routines import strongest as strongest_routine
 from app.adapters.robot import ROBOT
 from app.core.privacy import enforce_retention
@@ -664,18 +666,52 @@ class BayeBrain:
             pass
 
     async def generate_reply(self, text: str):
-        """Generate a reply using local model routing + confirmed memory/world context."""
-        model_reply, created_memory = await conversation_respond(
-            text,
-            state=self.snapshot(),
-            history=db.list_messages(80),
-        )
+        """Chat-first cognition.
+
+        High-trust commands are deterministic and auditable. Free conversation
+        falls through to the configured model router with memory/world context.
+        """
+        command = parse_chat_command(text, self.s)
+        if command.handled:
+            ack = None
+            if command.brain_command:
+                ack = self.command(command.brain_command, command.brain_payload)
+                if ack and ack.get("blocked"):
+                    reason = ack.get("reason", "bloqueado por seguridad")
+                    friendly = {
+                        "hardware_unavailable": "Quiero hacerlo, pero mi cuerpo físico todavía no está conectado.",
+                        "navigation_unavailable": "No tengo navegación física disponible todavía.",
+                        "hardware_estop_active": "No puedo moverme mientras el E-stop físico esté activo.",
+                        "collision_not_clear": "No puedo moverme hasta confirmar que la zona está libre.",
+                    }.get(reason, f"No puedo ejecutar esa acción: {reason}.")
+                    command.text = friendly
+                    command.emotion = "worried"
+            created_memory = command.data.get("memory")
+            model_reply = ModelReply(
+                text=command.text,
+                provider="skill",
+                model="chat-command",
+                meta={
+                    "ui_action": command.ui_action,
+                    "data": command.data,
+                    "ack": ack,
+                },
+            )
+        else:
+            model_reply, created_memory = await conversation_respond(
+                text,
+                state=self.snapshot(),
+                history=db.list_messages(80),
+            )
+
         self.s["model_provider"] = model_reply.provider
         if created_memory:
             self.s["last_memory"] = created_memory["content"]
             self.s["learning"] = f"Recuerdo confirmado: {created_memory['content']}"
             BUS.publish("memory.created", created_memory, source="conversation")
-        emotion = "curious" if model_reply.provider == "skill" else (
+        emotion = (
+            command.emotion if command.handled else
+            "curious" if model_reply.provider == "skill" else
             "thinking" if model_reply.degraded else
             "happy" if self.s["emotions"]["mood"] > 0.65 else "neutral_face"
         )
@@ -778,7 +814,13 @@ class BayeBrain:
         reply_text, emotion, model_reply = await self.generate_reply(text)
         self.set_activity("speaking", max(2.0, len(reply_text) / 12))
         emit({"type": "indicator", "value": "speaking"})
-        emit({"type": "model", "provider": model_reply.provider, "model": model_reply.model, "degraded": model_reply.degraded})
+        emit({
+            "type": "model",
+            "provider": model_reply.provider,
+            "model": model_reply.model,
+            "degraded": model_reply.degraded,
+            "ui_action": model_reply.meta.get("ui_action"),
+        })
 
         bmsg = db.add_message("baye", reply_text, emotion=emotion)
         # tipado progresivo sincronizado con el estado de habla

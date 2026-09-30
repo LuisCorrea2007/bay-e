@@ -313,7 +313,7 @@ class BayeBrain:
                     return {"ok": False, "blocked": True, "reason": "hardware_unavailable", "cmd": name}
                 s["prev_mode"] = s["mode"]
                 s["mode"] = m
-                s["charging"] = (m == "charging")
+                s["charging"] = (m == "charging" and s.get("demo_mode", False))
                 s["last_event"] = f"Cambié a modo {MODE_LABELS[m].lower()}."
                 db.log("info", "control", f"Modo → {MODE_LABELS[m]}", f"set_mode:{m}")
                 BUS.publish("robot.mode_changed", {"mode": m}, source="brain")
@@ -472,7 +472,7 @@ class BayeBrain:
                 s["battery"] = _clamp(s["battery"] + 0.35, 0, 100)
             else:
                 s["battery"] = _clamp(s["battery"] - drain, 0, 100)
-        else:
+        elif not s.get("hardware_connected", False):
             s["battery_source"] = "unavailable"
 
         # integridad de movimiento manual ----------------------------------

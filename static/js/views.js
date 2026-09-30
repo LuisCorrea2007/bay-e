@@ -798,7 +798,7 @@ const Views = (() => {
       $("#load-voice").addEventListener("click", () => toast("Voz «guardián» descargada e instalada 🎙️"));
       $("#load-model").addEventListener("click", () => toast("Modelo de visión v0.9.5 cargado 🧠"));
       $("#changelog").innerHTML = `
-        <b>v1.0.0</b> · 30/09/2026 — Nacimiento de BAY-E: cara viva, memoria SQLite, WebSocket en tiempo real.<br>
+        <b>v1.1.0-dev</b> · Núcleo real: model router local, World Model, OpenCV, Safety Governor, Guardian, salud y ROS 2 opcional.<br>\n        <b>v1.0.0</b> · 30/09/2026 — Nacimiento de BAY-E: cara viva, memoria SQLite, WebSocket en tiempo real.<br>
         <b>v0.9.4</b> — Módulo de visión: detección de personas, animales y movimiento.<br>
         <b>v0.8.1</b> — Escucha STT preparada para Whisper local.<br>
         <b>v0.7.3</b> — Mapa del hogar y rutas base (puerto ROS 2 listo).`;

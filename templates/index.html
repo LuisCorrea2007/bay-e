@@ -35,6 +35,7 @@
   <button class="rail-btn" data-nav="chat" title="Chat"><i data-icon="chat"></i><span>Chat</span></button>
   <button class="rail-btn" data-nav="memory" title="Memoria"><i data-icon="brain"></i><span>Memoria</span></button>
   <button class="rail-btn" data-nav="heart" title="Corazón emocional"><i data-icon="heart"></i><span>Corazón</span></button>
+  <button class="rail-btn" data-nav="health" title="Salud y bienestar"><i data-icon="pulse"></i><span>Salud</span></button>
   <button class="rail-btn" data-nav="vision" title="Visión"><i data-icon="eye"></i><span>Visión</span></button>
   <button class="rail-btn" data-nav="control" title="Control"><i data-icon="gamepad"></i><span>Control</span></button>
   <button class="rail-btn" data-nav="mind" title="Qué está pensando"><i data-icon="bulb"></i><span>Mente</span></button>
@@ -203,6 +204,47 @@
           </div>
           <canvas id="emo-chart" height="260"></canvas>
           <p class="hint">Ventana temporal de las últimas muestras (SQLite · tabla <code>history</code>).</p>
+        </div>
+      </div>
+    </article>
+
+    <!-- ─────────── SALUD / BIENESTAR ─────────── -->
+    <article class="view" id="view-health">
+      <div class="dash-grid">
+        <div class="card">
+          <div class="card-h"><i data-icon="pulse"></i><h3>Registrar medición</h3></div>
+          <p class="hint">BAY-E guarda mediciones y tendencias. Esta sección no diagnostica ni prescribe.</p>
+          <label class="fld"><span>Métrica</span>
+            <select id="health-metric">
+              <option value="heart_rate">Frecuencia cardíaca</option>
+              <option value="spo2">SpO₂</option>
+              <option value="temperature">Temperatura</option>
+              <option value="respiratory_rate">Frecuencia respiratoria</option>
+              <option value="weight">Peso</option>
+              <option value="custom">Otra</option>
+            </select>
+          </label>
+          <div class="row2">
+            <label class="fld"><span>Valor</span><input id="health-value" type="number" step="any" placeholder="0"></label>
+            <label class="fld"><span>Unidad</span><input id="health-unit" value="bpm"></label>
+          </div>
+          <label class="fld"><span>Persona / perfil (opcional)</span><input id="health-person" placeholder="perfil_local"></label>
+          <button class="btn btn-primary" id="health-save"><i data-icon="save"></i>Guardar medición</button>
+          <p class="hint warn">Ante síntomas graves o una emergencia, BAY-E debe priorizar ayuda humana/profesional y servicios de emergencia, no un diagnóstico autónomo.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><i data-icon="pulse"></i><h3>Tendencia descriptiva</h3></div>
+          <div class="kv"><label>Última</label><b id="health-latest">—</b></div>
+          <div class="kv"><label>Media</label><b id="health-mean">—</b></div>
+          <div class="kv"><label>Cambio</label><b id="health-delta">—</b></div>
+          <div class="kv"><label>Muestras</label><b id="health-count">0</b></div>
+          <p class="hint" id="health-notice">Selecciona una métrica para ver su historial.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><i data-icon="clock"></i><h3>Mediciones recientes</h3></div>
+          <div id="health-recent"><p class="empty">sin mediciones registradas</p></div>
         </div>
       </div>
     </article>

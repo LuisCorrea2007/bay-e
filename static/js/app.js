@@ -1,5 +1,5 @@
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const App={thread:"default",threads:[],state:null,faces:{},editing:null,panel:"mind",busy:false,ws:null,retry:0,audio:null};
+const App={thread:"default",threads:[],state:null,faces:{},editing:null,panel:"mind",busy:false,ws:null,retry:0,audio:null,voice:{recognition:null,wake:false,manual:false,active:false,suspended:false,restart:null,armedUntil:0,local:false,localChecked:false,blocked:false}};
 
 function esc(s=""){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function api(method,path,body){const o={method,headers:{}};if(body!==undefined){o.headers["Content-Type"]="application/json";o.body=JSON.stringify(body)}const r=await fetch(path,o);if(!r.ok)throw new Error(await r.text());return r.status===204?{}:r.json()}
@@ -9,18 +9,43 @@ function scrollBottom(){$("#conversation").scrollTop=$("#conversation").scrollHe
 function grow(){const e=$("#prompt");e.style.height="auto";e.style.height=Math.min(e.scrollHeight,180)+"px"}
 async function copyText(text){try{await navigator.clipboard.writeText(text);toast("Copiado")}catch{toast("No pude copiar")}}
 
+function voiceWord(){return String(App.state?.settings?.audio?.wake_word||"bay-e")}
+function updateVoiceUi(){
+  const b=$("#wake-btn"),s=$("#wake-status");if(!b||!s)return;
+  b.classList.toggle("active",App.voice.wake);b.classList.toggle("listening",App.voice.wake&&App.voice.active);
+  b.setAttribute("aria-pressed",String(App.voice.wake));
+  s.classList.toggle("on",App.voice.wake);
+  s.textContent=App.voice.wake?`Manos libres · di "${voiceWord()}"`:"Manos libres · apagado";
+}
+function scheduleVoiceRestart(delay=350){
+  clearTimeout(App.voice.restart);
+  if(!App.voice.wake||App.voice.suspended||App.voice.blocked||App.state?.private_mode)return;
+  App.voice.restart=setTimeout(()=>{if(App.busy||App.voice.active)return scheduleVoiceRestart(450);startVoiceRecognition(false)},delay);
+}
+function pauseVoiceForOutput(){
+  App.voice.suspended=true;clearTimeout(App.voice.restart);
+  if(App.voice.active&&App.voice.recognition){try{App.voice.recognition.abort()}catch{}}
+}
+function resumeVoiceAfterOutput(){
+  App.voice.suspended=false;for(const f of Object.values(App.faces))Face.update(f,App.state?.expression||{});
+  scheduleVoiceRestart(450);
+}
+function finishAudio(url=""){if(url)URL.revokeObjectURL(url);resumeVoiceAfterOutput()}
 async function speak(text){
   if(!text)return;
+  pauseVoiceForOutput();for(const f of Object.values(App.faces))Face.update(f,{speaking:true,emotion:"warm"});
   try{
     const r=await fetch("/api/audio/tts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})});
     if(r.ok){
       const blob=await r.blob(),url=URL.createObjectURL(blob);
       if(App.audio)App.audio.pause();
-      App.audio=new Audio(url);App.audio.onended=()=>URL.revokeObjectURL(url);await App.audio.play();return;
+      App.audio=new Audio(url);App.audio.onended=()=>finishAudio(url);App.audio.onerror=()=>finishAudio(url);
+      try{await App.audio.play();return}catch{finishAudio(url)}
     }
   }catch{}
-  if(!("speechSynthesis" in window))return;
-  speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="es-ES";u.rate=.94;u.pitch=1;speechSynthesis.speak(u);
+  if(!("speechSynthesis" in window)){resumeVoiceAfterOutput();return}
+  speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang="es-ES";u.rate=.94;u.pitch=1;
+  u.onend=resumeVoiceAfterOutput;u.onerror=resumeVoiceAfterOutput;speechSynthesis.speak(u);
 }
 
 function messageTools(){return `<div class="message-tools">
@@ -85,6 +110,7 @@ function applyState(s){
   $("#control-safety").textContent="Safety · "+(s.security?.status||"—");
   $("#toggle-autonomy").textContent=s.autonomy?"Autonomía · ON":"Autonomía · OFF";
   $("#private-mode").checked=!!s.private_mode;$("#autonomy-setting").checked=!!s.autonomy;
+  if(s.private_mode&&App.voice.wake)setWakeEnabled(false,"Modo privado: escucha manos libres desactivada.");
   $$(".mode-grid [data-mode]").forEach(b=>b.classList.toggle("active",b.dataset.mode===s.mode));
   const p=s.position||{};$("#world-position").textContent=p.room&&p.room!=="unknown"?p.room:"Sin posición física confirmada";
   const dot=$("#robot-dot");if(dot&&Number.isFinite(p.x)&&Number.isFinite(p.y)){dot.style.left=(Math.max(.05,Math.min(.95,p.x))*100)+"%";dot.style.top=(Math.max(.05,Math.min(.95,p.y))*100)+"%"}
@@ -149,7 +175,51 @@ async function loadSystem(){try{const [d,m]=await Promise.all([api("GET","/api/d
 function openDrawer(name){App.panel=name;$("#drawer").classList.add("open");$$(".drawer-view").forEach(v=>v.classList.toggle("active",v.dataset.view===name));$("#drawer-title").textContent={mind:"Corazón y mente",learning:"Aprendizaje",memory:"Memoria",tasks:"Tareas y rutinas",world:"Casa y mundo",vision:"Visión",control:"Cuerpo y control",devices:"Dispositivos",system:"Sistema y privacidad"}[name]||"BAY-E";if(name==="mind")loadRules();if(name==="learning")loadLearning();if(name==="memory")loadMemory();if(name==="tasks")loadTasks();if(name==="world")loadWorld();if(name==="vision")loadVision();if(name==="devices")loadDevices();if(name==="system")loadSystem()}
 
 async function command(cmd,payload={}){try{const r=await api("POST","/api/command",{cmd,payload});if(r.blocked)toast("Bloqueado por seguridad: "+(r.reason||"acción no disponible"));else toast("Comando aceptado");await refreshState();return r}catch{toast("No pude ejecutar el comando")}}
-function setupSpeech(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$("#voice-btn").onclick=()=>toast("Dictado no disponible en este navegador");return}const r=new SR();r.lang="es-ES";r.interimResults=false;r.onstart=()=>{$("#activity").textContent="Escuchando…";$("#voice-btn").classList.add("listening");for(const f of Object.values(App.faces))Face.update(f,{listening:true,emotion:"attentive"})};r.onend=()=>{$("#activity").textContent="Listo";$("#voice-btn").classList.remove("listening");refreshState()};r.onresult=e=>send(e.results[0][0].transcript);r.onerror=()=>toast("No pude escuchar el micrófono");$("#voice-btn").onclick=()=>{try{r.start()}catch{}}}
+function normalizedSpeech(text){return String(text||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9\s-]/g," ").replace(/\s+/g," ").trim()}
+function wakePattern(){
+  const word=normalizedSpeech(voiceWord())||"bay-e",compact=word.replace(/[\s-]/g,"");
+  const forms=[word,word.replace(/-/g," "),compact];
+  if(compact==="baye")forms.push("bay e","bai e","bai-e","baie");
+  return new RegExp("\\b(?:"+[...new Set(forms.filter(Boolean))].join("|")+")\\b");
+}
+function handleWakeTranscript(transcript){
+  const raw=String(transcript||"").trim(),norm=normalizedSpeech(raw);if(!norm)return;
+  const match=norm.match(wakePattern());
+  if(match){
+    App.voice.armedUntil=Date.now()+8000;
+    const rawMatch=raw.match(/\b(?:bay[\s-]?e|baye|bai[\s-]?e)\b/i);
+    const command=(rawMatch?raw.slice((rawMatch.index||0)+rawMatch[0].length):norm.slice((match.index||0)+match[0].length)).trim();
+    if(command){send(command);App.voice.armedUntil=0}else{toast("Te escucho · dime qué necesitas");$("#activity").textContent="BAY-E está atento…"}
+    return;
+  }
+  if(Date.now()<App.voice.armedUntil){App.voice.armedUntil=0;send(raw)}
+}
+function startVoiceRecognition(manual=false){
+  const r=App.voice.recognition;if(!r||App.voice.active||App.voice.suspended||App.voice.blocked)return;
+  if(App.state?.private_mode)return toast("El modo privado bloquea la escucha del micrófono");
+  App.voice.manual=manual;
+  try{r.start()}catch{if(App.voice.wake)scheduleVoiceRestart(500)}
+}
+function setWakeEnabled(on,message=""){
+  const v=App.voice,b=$("#wake-btn");v.wake=!!on;v.armedUntil=0;clearTimeout(v.restart);
+  if(!v.wake&&v.active&&v.recognition){try{v.recognition.abort()}catch{}}
+  updateVoiceUi();
+  if(message)toast(message);
+  if(v.wake){toast(v.local?"Manos libres activo · reconocimiento local disponible":"Manos libres activo · el navegador puede usar un servicio de voz");startVoiceRecognition(false)}
+}
+function setupSpeech(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition,b=$("#wake-btn"),mic=$("#voice-btn");
+  if(!SR){mic.onclick=()=>toast("Dictado no disponible en este navegador");b.disabled=true;b.title="Reconocimiento de voz no disponible";updateVoiceUi();return}
+  const r=new SR();App.voice.recognition=r;r.lang="es-ES";r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
+  const preferLocal=async()=>{if(App.voice.localChecked)return;App.voice.localChecked=true;if(typeof SR.available!=="function"||!("processLocally" in r))return;try{const status=await SR.available({langs:["es-ES"],processLocally:true,quality:"command"});if(status==="available"){r.processLocally=true;App.voice.local=true;updateVoiceUi()}}catch{}};
+  r.onstart=()=>{App.voice.active=true;mic.classList.toggle("listening",App.voice.manual);b.classList.toggle("listening",App.voice.wake);$("#activity").textContent=App.voice.manual?"Escuchando…":`Esperando "${voiceWord()}"…`;for(const f of Object.values(App.faces))Face.update(f,{listening:true,emotion:"attentive"})};
+  r.onend=()=>{const wasManual=App.voice.manual;App.voice.active=false;App.voice.manual=false;mic.classList.remove("listening");b.classList.remove("listening");$("#activity").textContent="Listo";if(!App.voice.suspended)for(const f of Object.values(App.faces))Face.update(f,App.state?.expression||{});if(App.voice.wake)scheduleVoiceRestart(wasManual?450:300)};
+  r.onresult=e=>{const transcript=e.results?.[0]?.[0]?.transcript||"";if(App.voice.manual)send(transcript);else if(App.voice.wake)handleWakeTranscript(transcript)};
+  r.onerror=e=>{App.voice.active=false;const fatal=["not-allowed","service-not-allowed","audio-capture"].includes(e.error);if(fatal){App.voice.blocked=true;setWakeEnabled(false);toast("No pude mantener el micrófono activo: revisa permisos")}else if(App.voice.manual&&e.error!=="no-speech")toast("No pude escuchar el micrófono")};
+  mic.onclick=()=>{if(App.voice.active&&App.voice.manual){try{r.stop()}catch{};return}startVoiceRecognition(true)};
+  b.onclick=async()=>{if(App.state?.private_mode)return toast("Desactiva modo privado para usar manos libres");if(!App.voice.wake)await preferLocal();setWakeEnabled(!App.voice.wake)};
+  updateVoiceUi();
+}
 
 document.addEventListener("DOMContentLoaded",async()=>{
   App.faces.main=Face.create($("#face-main"));App.faces.mind=Face.create($("#face-mind"),{small:true});

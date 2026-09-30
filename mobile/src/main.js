@@ -94,11 +94,24 @@ async function send(text){
   try{
     const r=await api('POST','/api/mobile/chat/send',{text,thread_id:state.thread,node_id:state.nodeId});
     add('baye',r.baye.content,(r.model?.provider||'')+' · '+(r.model?.model||''));
-    speak(r.baye.content);await Haptics.impact({style:ImpactStyle.Light});
+    await Haptics.impact({style:ImpactStyle.Light});await speak(r.baye.content);
   }catch(e){add('baye','No pude contactar mi Core: '+e.message)}
   face('');
 }
-function speak(text){if(!('speechSynthesis'in window))return;const u=new SpeechSynthesisUtterance(text);u.lang='es-ES';u.rate=.94;speechSynthesis.cancel();speechSynthesis.speak(u)}
+async function speak(text){
+  if(!text)return;
+  face('speaking');
+  try{
+    const r=await fetch(base('/api/audio/tts'),{method:'POST',headers:{'Content-Type':'application/json',...(state.token?{Authorization:'Bearer '+state.token}:{})},body:JSON.stringify({text})});
+    if(r.ok){
+      const blob=await r.blob(),url=URL.createObjectURL(blob),audio=new Audio(url);
+      try{await new Promise((resolve,reject)=>{audio.onended=resolve;audio.onerror=reject;audio.play().catch(reject)});return}
+      finally{URL.revokeObjectURL(url)}
+    }
+  }catch{}
+  if(!('speechSynthesis'in window))return;
+  await new Promise(resolve=>{const u=new SpeechSynthesisUtterance(text);u.lang='es-ES';u.rate=.94;u.onend=resolve;u.onerror=resolve;speechSynthesis.cancel();speechSynthesis.speak(u)});
+}
 
 async function listen(){
   if(!state.token){$('#settings').showModal();return}

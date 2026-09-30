@@ -77,6 +77,23 @@ Mind entries are structured as restrictions, principles, goals, confirmed
 beliefs and notes. They are injected into BAY-E's conversational context. They
 do not expose or edit hidden chain-of-thought.
 
+## Voice and hands-free mode
+
+BAY-E 2.3 adds an explicit **manos libres** control next to push-to-talk. It is
+off by default and starts only after a user gesture. When enabled, BAY-E listens
+for the wake phrase `BAY-E`; saying only the wake phrase opens a short follow-up
+window, while saying `BAY-E <comando>` sends the command directly.
+
+The browser client pauses speech recognition while BAY-E is speaking so its own
+TTS is not treated as a new command. Private mode immediately disables
+hands-free listening. If the browser reports an already-installed on-device
+Spanish recognition model, BAY-E prefers it; otherwise the browser may use its
+normal recognition service, which can be remote depending on the browser.
+
+BAY-E Mobile 1.2 now tries the Core's Piper TTS endpoint first so the phone can
+use the same local voice as the robot. If Piper is unavailable, it falls back to
+the device/webview speech synthesizer.
+
 ## Companion learning with review
 
 BAY-E 2.2 adds a conservative learning inbox. Simple non-sensitive first-person
@@ -218,7 +235,7 @@ node --check static/js/views.js
 uvicorn main:app --reload
 ```
 
-Current development baseline: **v2.2.0**.
+Current development baseline: **v2.3.0**.
 
 ### 2.0 definition of done
 

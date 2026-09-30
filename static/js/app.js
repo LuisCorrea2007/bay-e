@@ -71,7 +71,7 @@ const App = (() => {
   function onState(s) {
     Object.assign(stateLabels, s.emotion_labels || {});
     V.applyState(s);
-    if (first) { first = false; go("dashboard"); }
+    if (first) { first = false; go("chat"); }
   }
 
   return { boot, go, get faceMain() { return faceMain; }, get faceMini() { return faceMini; }, stateLabels };

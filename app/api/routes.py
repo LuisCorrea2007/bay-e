@@ -22,6 +22,8 @@ from ..core.config import APP_VERSION, BACKUP_DIR, CAM_DIR, DEFAULT_SETTINGS
 from ..core.ws import broadcast_state
 from ..core.events import BUS
 from ..core.guardian import GUARDIAN
+from ..core.diagnostics import snapshot as diagnostics_snapshot
+from ..core.privacy import enforce_retention
 from ..adapters.audio import AUDIO
 from ..adapters.face_identity import FACE_IDENTITY
 from ..adapters.vision import VISION
@@ -592,3 +594,16 @@ async def audio_transcribe(audio: UploadFile = File(...)):
 @router.get("/learning/patterns")
 def learning_patterns(days: int = Query(30, ge=1, le=365), min_count: int = Query(3, ge=2, le=100)):
     return {"patterns": discover_routines(days=days, min_count=min_count)}
+
+# ================================================================ diagnóstico / mantenimiento
+@router.get("/diagnostics")
+def diagnostics():
+    return diagnostics_snapshot()
+
+
+@router.post("/privacy/enforce-retention")
+def privacy_enforce_retention():
+    days = int(BAYE.s["settings"]["privacy"].get("retention_days", 180))
+    result = enforce_retention(days)
+    broadcast_state()
+    return {"ok": True, **result}

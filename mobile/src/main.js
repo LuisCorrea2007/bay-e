@@ -7,9 +7,12 @@ import { Motion } from '@capacitor/motion';
 import { Network } from '@capacitor/network';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 import { SecureStorage } from '@aparajita/capacitor-secure-storage';
+import { normalizeCoreUrl } from './core-url.js';
 
 const $=s=>document.querySelector(s);
-const state={core:localStorage.getItem('baye_core')||'',token:'',nodeId:'',thread:'default',motion:null,network:null,battery:null,listening:false};
+let storedCore='';
+try{storedCore=normalizeCoreUrl(localStorage.getItem('baye_core')||'')}catch{localStorage.removeItem('baye_core')}
+const state={core:storedCore,token:'',nodeId:'',thread:'default',motion:null,network:null,battery:null,listening:false};
 
 function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1900)}
 function base(path){return state.core.replace(/\/$/,'')+path}
@@ -142,8 +145,9 @@ async function locationOnce(){
   }catch(e){toast('No pude compartir la ubicación')}
 }
 async function saveSettings(){
-  state.core=$('#core-url').value.trim();localStorage.setItem('baye_core',state.core);
   try{
+    state.core=normalizeCoreUrl($('#core-url').value);
+    localStorage.setItem('baye_core',state.core);
     await pairIfNeeded();
     $('#settings').close();
     await heartbeat();await loadChat();toast('Teléfono conectado con BAY-E');

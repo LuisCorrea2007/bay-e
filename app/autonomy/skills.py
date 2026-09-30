@@ -38,6 +38,19 @@ class SkillRegistry:
 
 SKILLS = SkillRegistry()
 SKILLS.register(Skill("memory.search", "Buscar recuerdos confirmados.", lambda query, limit=6: retrieve(query, limit=limit)))
+SKILLS.register(Skill("memory.recent", "Listar recuerdos recientes confirmados.", lambda limit=6: db.list_memories()[:int(limit)]))
 SKILLS.register(Skill("memory.remember", "Crear una memoria explícita del usuario.", lambda content, type="semantic": db.add_memory(type=type, content=content, source="user", confidence=1.0, tags=["explicito"])))
+
+def _forget(query: str) -> dict:
+    hits = retrieve(query, limit=20)
+    deleted = []
+    for mem in hits:
+        if query.lower() in (mem.get("content") or "").lower() or float(mem.get("_score", 0)) >= 1.5:
+            if db.delete_memory(mem["id"]):
+                deleted.append(mem["id"])
+    return {"deleted": len(deleted), "ids": deleted}
+
+SKILLS.register(Skill("memory.forget", "Borrar recuerdos confirmados que coincidan con una orden explícita.", _forget))
 SKILLS.register(Skill("world.snapshot", "Leer entidades y relaciones conocidas.", lambda: world_snapshot()))
 SKILLS.register(Skill("task.create", "Crear una tarea o rutina.", lambda title, description="": db.add_task(title=title, description=description)))
+SKILLS.register(Skill("task.list", "Listar tareas y rutinas.", lambda: db.list_tasks()))

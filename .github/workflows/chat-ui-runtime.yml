@@ -1,0 +1,69 @@
+name: BAY-E Chat UI Runtime
+
+on:
+  push:
+    branches:
+      - redesign/**
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Validate
+        run: |
+          python -m compileall -q app main.py
+          python -m unittest discover -s tests -v
+          node --check static/js/app.js
+          node --check static/js/face.js
+      - name: Start BAY-E
+        run: |
+          nohup uvicorn main:app --host 127.0.0.1 --port 8300 > /tmp/baye.log 2>&1 &
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8300/health && exit 0
+            sleep 1
+          done
+          cat /tmp/baye.log
+          exit 1
+      - name: Capture redesigned UI
+        run: |
+          cat > /tmp/capture.py <<'PY'
+          from playwright.sync_api import sync_playwright
+          from pathlib import Path
+          out=Path("screenshots"); out.mkdir(exist_ok=True)
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True)
+              page=b.new_page(viewport={"width":1600,"height":1000})
+              page.goto("http://127.0.0.1:8300",wait_until="networkidle")
+              page.wait_for_timeout(1800)
+              page.screenshot(path=str(out/"01-chat-home.png"),full_page=True)
+              page.fill("#chat-input","¿Cómo te sientes ahora?")
+              page.click("#send-btn")
+              page.wait_for_timeout(1800)
+              page.screenshot(path=str(out/"02-chat-function.png"),full_page=True)
+              page.click('[data-panel="memory"]')
+              page.wait_for_timeout(600)
+              page.screenshot(path=str(out/"03-memory-inspector.png"),full_page=True)
+              page.click('[data-panel="system"]')
+              page.wait_for_timeout(600)
+              page.screenshot(path=str(out/"04-system-inspector.png"),full_page=True)
+              b.close()
+          PY
+          python /tmp/capture.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: baye-chat-ui-screenshots
+          path: screenshots/
+          if-no-files-found: error

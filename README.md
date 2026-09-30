@@ -204,7 +204,7 @@ node --check static/js/views.js
 uvicorn main:app --reload
 ```
 
-Current stable software baseline: **v2.0.0**.
+Current stable software baseline: **v2.1.0**.
 
 ### 2.0 definition of done
 

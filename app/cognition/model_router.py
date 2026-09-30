@@ -29,6 +29,7 @@ class ModelReply:
     provider: str
     model: str
     degraded: bool = False
+    ui_action: dict[str, Any] | None = None
 
 
 class Provider(Protocol):

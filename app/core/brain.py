@@ -53,12 +53,7 @@ MODE_LABELS = {
 ACTIVITIES = ["idle", "listening", "thinking", "speaking", "moving", "watching", "sleeping", "curious"]
 
 ROOMS = [
-    {"id": "living", "name": "Salón", "x": 0.08, "y": 0.10, "w": 0.46, "h": 0.40},
-    {"id": "kitchen", "name": "Cocina", "x": 0.58, "y": 0.10, "w": 0.34, "h": 0.40},
-    {"id": "hall", "name": "Pasillo", "x": 0.08, "y": 0.54, "w": 0.84, "h": 0.14},
-    {"id": "bedroom", "name": "Dormitorio", "x": 0.08, "y": 0.72, "w": 0.30, "h": 0.20},
-    {"id": "study", "name": "Estudio", "x": 0.42, "y": 0.72, "w": 0.22, "h": 0.20},
-    {"id": "base", "name": "Base de carga", "x": 0.68, "y": 0.72, "w": 0.24, "h": 0.20},
+    {"id": "unknown", "name": "Sin mapear", "x": 0.08, "y": 0.10, "w": 0.84, "h": 0.82},
 ]
 
 THOUGHTS = [
@@ -124,7 +119,7 @@ class BayeBrain:
             "security": {"status": "ok", "detail": "Safety Governor activo. Hardware físico aún no conectado."},
             "movement": {"dir": "stop", "since": 0.0},
             "head": {"yaw": 0.0, "pitch": 0.0},
-            "position": {"room": "living", "x": 0.30, "y": 0.30},
+            "position": {"room": "unknown", "x": 0.50, "y": 0.50},
             "goal_queue": [],
             "current_task": None,
             "last_thought": random.choice(THOUGHTS),

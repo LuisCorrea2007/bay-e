@@ -94,6 +94,13 @@ class BayeBrain:
         emotions = {k: 0.5 for k in EMO_KEYS}
         emotions.update({"energy": 0.82, "curiosity": 0.7, "sociability": 0.75,
                          "trust": 0.8, "mood": 0.75, "activity": 0.4})
+        persisted_emotions = db.get_setting("runtime:emotions", {}) or {}
+        for key in EMO_KEYS:
+            if key in persisted_emotions:
+                try:
+                    emotions[key] = _clamp(float(persisted_emotions[key]))
+                except (TypeError, ValueError):
+                    pass
         modules = db.get_setting("modules", None) or DEFAULT_MODULES
         settings = {}
         for key, dflt in DEFAULT_SETTINGS.items():
@@ -579,7 +586,9 @@ class BayeBrain:
         # histórico para gráficas (cada ~20 s) ----------------------------------
         if now - self._last_hist_push > 20:
             self._last_hist_push = now
-            db.push_history({k: round(v, 3) for k, v in e.items()} | {"battery": round(s["battery"], 1), "mode": s["mode"]})
+            emotion_snapshot = {k: round(v, 3) for k, v in e.items()}
+            db.push_history(emotion_snapshot | {"battery": round(s["battery"], 1), "mode": s["mode"]})
+            db.set_setting("runtime:emotions", emotion_snapshot)
 
     # ------------------------------------------------------------ publicación
     def publish_now(self) -> None:

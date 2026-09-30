@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "npm run test:url-policy && vite build",
     "cap:add:android": "npx cap add android",
     "cap:sync": "npx cap sync android",
-    "android": "npm run build && npx cap sync android && npx cap open android"
+    "android": "npm run build && npx cap sync android && npx cap open android",
+    "test:url-policy": "node scripts/test-core-url.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

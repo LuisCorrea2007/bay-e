@@ -87,7 +87,10 @@ const Views = (() => {
       $("#qc-send").addEventListener("click", () => this.quick());
       $("#qc-text").addEventListener("keydown", (e) => { if (e.key === "Enter") this.quick(); });
       $("#chat-mic").addEventListener("click", () => this.mic());
-      Net.on("chat", (m) => this.renderMsg(m.message, m.final));
+      Net.on("chat", (m) => {
+        this.renderMsg(m.message, m.final);
+        if (m.final && m.message?.role === "baye") this.speakOut(m.message.content);
+      });
       Net.on("chat_partial", (m) => this.partial(m));
       Net.on("indicator", (m) => this.indicator(m.value));
     },
@@ -114,7 +117,7 @@ const Views = (() => {
     async restFallback(text) {
       try {
         const r = await Net.api("POST", "/api/chat/send", { text });
-        this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.scroll();
+        this.renderMsg(r.user, true); this.renderMsg(r.baye, true); this.speakOut(r.baye.content); this.scroll();
       } catch (e) { toast("sin conexión con BAY-E", true); }
     },
     partial(m) {
@@ -169,7 +172,10 @@ const Views = (() => {
     speakOut(text) {
       if (!("speechSynthesis" in window)) return;
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = "es-ES"; u.rate = .98; u.pitch = 1.15;
+      u.lang = "es-ES"; u.rate = .96; u.pitch = 1.08;
+      u.onstart = () => this.indicator("speaking");
+      u.onend = () => this.indicator(null);
+      u.onerror = () => this.indicator(null);
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     },
     indicator(v) {

@@ -19,6 +19,8 @@ from ..core import db
 from ..core.brain import BAYE, EMO_KEYS, MODES
 from ..core.config import APP_VERSION, BACKUP_DIR, CAM_DIR, DEFAULT_SETTINGS
 from ..core.ws import broadcast_state
+from ..core.events import BUS
+from ..core.guardian import GUARDIAN
 
 router = APIRouter(prefix="/api")
 
@@ -246,6 +248,8 @@ def settings_put(section: str, payload: dict = Body(...)):
         BAYE.s["autonomy"] = bool(merged.get("enabled"))
     if section == "privacy":
         BAYE.s["private_mode"] = bool(merged.get("private_mode"))
+    if section == "system":
+        BAYE.s["demo_mode"] = bool(merged.get("demo_mode", False))
     if section == "identity":
         pass  # el frontend re-pinta nombre/voz al recibir state
     db.log("info", "settings", f"Configuración actualizada: {section}", json.dumps(payload)[:300])
@@ -296,11 +300,8 @@ def modules_toggle(mid: str, payload: dict = Body(...)):
 
 @router.post("/updates/check")
 def updates_check():
-    """Simulación de comprobación. Real: consultar repositorio de módulos/voces."""
-    return {"ok": True, "current": APP_VERSION,
-            "available": [{"name": "Voz «guardián» v2", "kind": "voice"},
-                          {"name": "Modelo de visión v0.9.5", "kind": "model"},
-                          {"name": "BAY-E core v1.0.1", "kind": "system"}]}
+    """No inventa actualizaciones: un proveedor real se conectará más adelante."""
+    return {"ok": True, "current": APP_VERSION, "available": [], "source": "not_configured"}
 
 
 @router.post("/updates/install")
@@ -368,3 +369,13 @@ def privacy_purge(payload: dict = Body(...)):
 @router.get("/history")
 def history(limit: int = 240):
     return {"history": db.get_history(limit)}
+
+# ================================================================ núcleo / observabilidad
+@router.get("/core/events")
+def core_events(limit: int = Query(100, ge=1, le=500)):
+    return {"events": BUS.recent(limit)}
+
+
+@router.get("/guardian")
+def guardian_state():
+    return GUARDIAN.snapshot()

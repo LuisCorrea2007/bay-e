@@ -1,0 +1,65 @@
+name: BAY-E Web Runtime
+
+on:
+  push:
+    branches:
+      - feature/chat-mind-mobile
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Start BAY-E
+        run: |
+          nohup uvicorn main:app --host 127.0.0.1 --port 8300 >/tmp/baye.log 2>&1 &
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:8300/health && exit 0
+            sleep 1
+          done
+          cat /tmp/baye.log
+          exit 1
+      - name: Test chat and mind UI
+        run: |
+          cat >/tmp/test_ui.py <<'PY'
+          from pathlib import Path
+          from playwright.sync_api import sync_playwright
+          out=Path("runtime"); out.mkdir(exist_ok=True)
+          with sync_playwright() as p:
+              b=p.chromium.launch(headless=True)
+              page=b.new_page(viewport={"width":1440,"height":950})
+              page.goto("http://127.0.0.1:8300", wait_until="networkidle")
+              page.click("#new-chat")
+              page.wait_for_timeout(300)
+              page.fill("#prompt","recuerda que la prueba móvil funciona")
+              page.click("#send-btn")
+              page.wait_for_timeout(1800)
+              assert page.locator(".message").count() >= 2
+              page.locator(".message.user .message-tools [data-act=edit]").last.click()
+              page.fill("#edit-text","recuerda que la prueba móvil funciona correctamente")
+              page.click("#edit-save")
+              page.wait_for_timeout(300)
+              assert "correctamente" in page.locator(".message.user .bubble").last.inner_text()
+              page.click("#mind-btn")
+              page.fill("#rule-content","Nunca inventes que un sensor está conectado.")
+              page.click("#rule-form button[type=submit]")
+              page.wait_for_timeout(400)
+              assert page.locator(".rule-card").count() >= 1
+              page.screenshot(path=str(out/"baye-heart-mind.png"), full_page=True)
+              b.close()
+          PY
+          python /tmp/test_ui.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BAY-E-web-runtime
+          path: runtime/

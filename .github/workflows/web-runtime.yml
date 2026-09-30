@@ -64,6 +64,18 @@ jobs:
               page.wait_for_timeout(400)
               assert page.locator(".rule-card").count() >= 1
               page.screenshot(path=str(out/"baye-heart-mind.png"), full_page=True)
+              page.click("#drawer-close")
+              page.fill("#prompt","Me gusta el color turquesa de prueba")
+              page.click("#send-btn")
+              page.wait_for_function("document.querySelectorAll('.message').length >= 4", timeout=10000)
+              page.click("[data-panel=learning]")
+              page.wait_for_timeout(300)
+              assert page.locator(".learning-card").count() >= 1
+              assert "turquesa" in page.locator(".learning-card p").first.inner_text().lower()
+              page.locator(".learning-card [data-a=approve]").first.click()
+              page.wait_for_timeout(350)
+              assert page.locator(".learning-card").count() == 0
+              page.screenshot(path=str(out/"baye-learning.png"), full_page=True)
               page.click("[data-panel=control]")
               page.wait_for_timeout(200)
               page.click("[data-move=forward]")

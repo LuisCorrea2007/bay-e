@@ -44,12 +44,18 @@ def relate(subject_id: str, predicate: str, object_id: str, *, source: str, conf
 def ingest_detection(det: dict[str, Any]) -> dict:
     label = str(det.get("label") or "desconocido")
     kind = str(det.get("kind") or "object")
+    room = str(det.get("room") or "")
+    confidence = float(det.get("confidence", 0.5))
     entity = upsert_entity(
         kind,
         label,
         source="vision",
-        confidence=float(det.get("confidence", 0.5)),
-        attrs={"last_box": det.get("box"), "last_seen": float(det.get("ts", time.time()))},
+        confidence=confidence,
+        attrs={"last_box": det.get("box"), "last_seen": float(det.get("ts", time.time())), "last_room": room},
+    )
+    db.add_observation(
+        kind=kind, label=label, room=room, source="vision",
+        confidence=confidence, ts=float(det.get("ts", time.time())),
     )
     return entity
 

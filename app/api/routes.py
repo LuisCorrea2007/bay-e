@@ -89,7 +89,7 @@ def chat_history(thread_id: str = "default", limit: int = Query(300, ge=1, le=20
     return {"messages": db.list_messages(limit, thread_id=thread_id)}
 
 
-@router.put("/chat/messages/{msg_id}")
+@router.get("/chat/search")\ndef chat_search(q: str, limit: int = 50):\n    q = " ".join((q or "").split()).strip()\n    if len(q) < 2:\n        raise HTTPException(400, "búsqueda demasiado corta")\n    return {"results": db.search_messages(q, limit=max(1, min(200, limit)))}\n\n\n@router.put("/chat/messages/{msg_id}")
 def chat_message_update(msg_id: str, payload: dict = Body(...)):
     msg = db.update_message(msg_id, payload.get("content", ""))
     if not msg:

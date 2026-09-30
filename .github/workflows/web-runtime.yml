@@ -4,7 +4,8 @@ on:
   push:
     branches:
       - main
-      - feature/chat-mind-mobile\n      - release/**
+      - feature/chat-mind-mobile
+      - release/**
   workflow_dispatch:
 
 jobs:

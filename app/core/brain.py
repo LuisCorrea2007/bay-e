@@ -119,6 +119,11 @@ class BayeBrain:
             "model_provider": "fallback",
             "hardware_connected": False,
             "robot_adapter": ROBOT.name,
+            "software_estop": False,
+            "arms": {
+                "left": {"shoulder": 0.0, "elbow": 0.0, "gripper": 0.0},
+                "right": {"shoulder": 0.0, "elbow": 0.0, "gripper": 0.0},
+            },
             "sensors": {"mic": False, "camera": False, "tts": False, "memory": True},
             "emotions": emotions,
             "expression": {"emotion": "happy", "gaze": {"x": 0, "y": 0}},
@@ -216,6 +221,8 @@ class BayeBrain:
             "hardware_ready": self.hardware_ready,
             "hardware_connected": s.get("hardware_connected", False),
             "robot_adapter": s.get("robot_adapter", "offline"),
+            "software_estop": s.get("software_estop", False),
+            "arms": s.get("arms", {}),
             "model_provider": s.get("model_provider", "fallback"),
             "settings": s["settings"],
             "modules": s["modules"],
@@ -359,6 +366,45 @@ class BayeBrain:
                     ROBOT.look(s["head"]["yaw"], s["head"]["pitch"])
                 except Exception as exc:
                     GUARDIAN.report("robot", "degraded", repr(exc))
+        elif name == "arm":
+            side = str(p.get("side", ""))
+            decision = SAFETY.evaluate_manipulation(side, s)
+            if not decision.allowed:
+                db.log("warn", "safety", "Orden de brazo bloqueada", decision.code)
+                BUS.publish("robot.manipulation_blocked", decision.to_dict(), source="safety")
+                return {"ok": False, "blocked": True, "reason": decision.code, "cmd": name}
+            target = {
+                "shoulder": _clamp(float(p.get("shoulder", 0)), -1, 1),
+                "elbow": _clamp(float(p.get("elbow", 0)), -1, 1),
+                "gripper": _clamp(float(p.get("gripper", 0)), 0, 1),
+            }
+            try:
+                ROBOT.arm(side, target["shoulder"], target["elbow"], target["gripper"])
+                s["arms"][side] = target
+                BUS.publish("robot.arm_requested", {"side": side, **target}, source="brain")
+            except Exception as exc:
+                GUARDIAN.report("robot", "degraded", repr(exc))
+                return {"ok": False, "blocked": True, "reason": "adapter_failure", "cmd": name}
+        elif name == "emergency_stop":
+            s["software_estop"] = True
+            s["movement"] = {"dir": "stop", "since": time.time()}
+            s["mode"] = "idle"
+            s["security"] = {"status": "blocked", "detail": "Parada de emergencia activa."}
+            try:
+                ROBOT.emergency_stop()
+            except Exception:
+                pass
+            BUS.publish("robot.emergency_stop", {"active": True}, source="safety")
+            db.log("sensitive", "safety", "Parada de emergencia activada", "")
+        elif name == "clear_estop":
+            telemetry = ROBOT.telemetry()
+            if telemetry.connected and telemetry.emergency_stop:
+                return {"ok": False, "blocked": True, "reason": "hardware_estop_active", "cmd": name}
+            if telemetry.connected and not telemetry.collision_clear:
+                return {"ok": False, "blocked": True, "reason": "collision_not_clear", "cmd": name}
+            s["software_estop"] = False
+            s["security"] = {"status": "ok", "detail": "Parada de software liberada."}
+            BUS.publish("robot.emergency_stop", {"active": False}, source="safety")
         elif name == "toggle_autonomy":
             s["autonomy"] = bool(p.get("on", not s["autonomy"]))
             db.log("info", "control", f"Autonomía {'activada' if s['autonomy'] else 'desactivada'}", "")
@@ -450,6 +496,12 @@ class BayeBrain:
             s["robot_adapter"] = ROBOT.name
             if telemetry.connected:
                 s["connection"] = "robot"
+                if telemetry.emergency_stop or s.get("software_estop"):
+                    s["security"] = {"status": "blocked", "detail": "Parada de emergencia activa."}
+                elif not telemetry.collision_clear:
+                    s["security"] = {"status": "blocked", "detail": "Esperando confirmación física de zona libre."}
+                else:
+                    s["security"] = {"status": "ok", "detail": "Heartbeat y zona de movimiento confirmados."}
                 GUARDIAN.report("robot", "ok", f"adapter={ROBOT.name}")
                 if telemetry.battery is not None:
                     s["battery"] = _clamp(float(telemetry.battery), 0, 100)

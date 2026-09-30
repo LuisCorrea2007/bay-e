@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.events import BUS
 from app.core.guardian import GUARDIAN
+from .object_detector import OBJECTS
 
 
 class VisionAdapter:
@@ -61,6 +62,11 @@ class VisionAdapter:
                 diff = cv2.absdiff(self._prev_gray, gray)
                 motion = float((diff > 25).mean())
             self._prev_gray = gray
+
+        # detector de objetos local opcional (OpenCV DNN + ONNX)
+        for obj in OBJECTS.detect(frame):
+            obj.update({"id": f"obj_{int(time.time()*1000)}_{len(detections)}", "ts": time.time()})
+            detections.append(obj)
 
         if motion > 0.06:
             detections.append({

@@ -15,6 +15,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import time
 from typing import Any, Protocol
 
 from app.core.guardian import GUARDIAN
@@ -34,7 +35,7 @@ class Provider(Protocol):
     def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply: ...
 
 
-def _post_json(url: str, payload: dict[str, Any], timeout: float = 18.0) -> dict[str, Any]:
+def _post_json(url: str, payload: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -104,6 +105,7 @@ class ModelRouter:
         self.fallback = FallbackProvider()
         self.last_provider = "fallback"
         self._fingerprint = ""
+        self._failed_until: dict[str, float] = {}
         self.configure({})
 
     def configure(self, config: dict | None) -> None:
@@ -132,14 +134,19 @@ class ModelRouter:
 
     def generate(self, messages: list[dict[str, str]], *, temperature: float = 0.6) -> ModelReply:
         self._refresh_config()
+        now = time.time()
         for provider in self.providers:
+            if self._failed_until.get(provider.name, 0.0) > now:
+                continue
             try:
                 out = provider.generate(messages, temperature=temperature)
                 self.last_provider = out.provider
+                self._failed_until.pop(provider.name, None)
                 GUARDIAN.report("model", "ok", f"{out.provider}:{out.model}")
                 return out
             except (OSError, KeyError, ValueError, urllib.error.URLError, TimeoutError) as exc:
                 GUARDIAN.report("model", "degraded", f"{provider.name}: {exc!r}")
+                self._failed_until[provider.name] = time.time() + 30.0
                 continue
         out = self.fallback.generate(messages)
         self.last_provider = out.provider

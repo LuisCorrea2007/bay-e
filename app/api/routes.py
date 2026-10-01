@@ -9,6 +9,7 @@ interior de las funciones sin cambiar el contrato HTTP.
 """
 import ipaddress
 import json
+import sqlite3
 import time
 import tempfile
 from pathlib import Path
@@ -501,33 +502,75 @@ def updates_install(payload: dict = Body(...)):
     raise HTTPException(409, "No hay proveedor de actualizaciones configurado. BAY-E no simulará una instalación.")
 
 
+def _backup_path(name: str) -> Path:
+    """Resuelve únicamente nombres simples dentro del directorio de backups."""
+    safe = Path(str(name or "")).name
+    if not safe or safe != str(name or ""):
+        raise HTTPException(400, "nombre de backup inválido")
+    path = BACKUP_DIR / safe
+    try:
+        path.resolve().relative_to(BACKUP_DIR.resolve())
+    except ValueError:
+        raise HTTPException(400, "ruta de backup inválida")
+    return path
+
+
 @router.post("/backups")
 def backups_create():
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    out = BACKUP_DIR / f"baye-backup-{stamp}.json"
-    out.write_text(json.dumps({"memories": db.export_memories(),
-                               "settings": BAYE.s["settings"],
-                               "modules": BAYE.s["modules"]}, ensure_ascii=False, indent=2))
-    db.log("sensitive", "backup", f"Backup creado: {out.name}", "")
-    return {"ok": True, "file": str(out)}
+    millis = int(time.time() * 1000) % 1000
+    out = BACKUP_DIR / f"baye-backup-{stamp}-{millis:03d}.sqlite3"
+    meta = db.create_database_backup(out)
+    db.log("sensitive", "backup", f"Snapshot SQLite creado: {out.name}", "integrity=ok")
+    return {"ok": True, "backup": meta}
 
 
 @router.get("/backups")
 def backups_list():
-    return {"backups": [{"name": p.name, "size": p.stat().st_size,
-                         "ts": p.stat().st_mtime} for p in sorted(BACKUP_DIR.glob("*.json"), reverse=True)]}
+    items = []
+    for pattern, kind in (("*.sqlite3", "database"), ("*.json", "legacy-memory")):
+        for p in BACKUP_DIR.glob(pattern):
+            items.append({
+                "name": p.name,
+                "size": p.stat().st_size,
+                "ts": p.stat().st_mtime,
+                "kind": kind,
+            })
+    items.sort(key=lambda item: item["ts"], reverse=True)
+    return {"backups": items, "database": db.database_health()}
 
 
 @router.post("/backups/restore")
 def backups_restore(payload: dict = Body(...)):
-    name = payload.get("name", "")
-    p = BACKUP_DIR / name
-    if not p.exists():
+    name = str(payload.get("name", ""))
+    p = _backup_path(name)
+    if not p.is_file():
         raise HTTPException(404, "backup no encontrado")
-    data = json.loads(p.read_text())
-    n = db.import_memories(data.get("memories", []))
-    db.log("sensitive", "backup", f"Restaurado backup {name} ({n} memorias)", "")
-    return {"ok": True, "restored": n}
+
+    if p.suffix == ".sqlite3":
+        # Conservamos automáticamente el estado inmediatamente anterior para
+        # poder deshacer una restauración equivocada.
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        safety = BACKUP_DIR / f"baye-pre-restore-{stamp}.sqlite3"
+        db.create_database_backup(safety)
+        try:
+            result = db.restore_database_backup(p)
+        except (RuntimeError, sqlite3.DatabaseError) as exc:
+            raise HTTPException(400, str(exc))
+        db.log("sensitive", "backup", f"Snapshot SQLite restaurado: {name}", f"safety={safety.name}")
+        return {**result, "safety_backup": safety.name}
+
+    if p.suffix == ".json":
+        # Compatibilidad con backups 2.0-2.3.1: solo contenían memorias.
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise HTTPException(400, f"backup legado inválido: {exc}")
+        n = db.import_memories(data.get("memories", []))
+        db.log("sensitive", "backup", f"Backup legado restaurado: {name} ({n} memorias)", "")
+        return {"ok": True, "restored": n, "legacy": True, "restart_required": False}
+
+    raise HTTPException(400, "formato de backup no soportado")
 
 
 # ================================================================ privacidad

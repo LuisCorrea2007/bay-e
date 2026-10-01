@@ -985,7 +985,8 @@ const Views = (() => {
           <li>${Icons.svg("save")}<span>${b.name}</span><span style="color:var(--txt-faint)">${(b.size / 1024).toFixed(1)} KB</span>
           <button class="btn sm btn-ghost x" data-n="${b.name}">restore</button></li>`).join("") : `<li class="empty">sin backups aún</li>`;
         $$("#bk-list [data-n]").forEach((b) => b.addEventListener("click", async () => {
-          await Net.api("POST", "/api/v1/backups/restore", { name: b.dataset.n }); toast("Backup restaurado ↺");
+          const result = await Net.api("POST", "/api/v1/backups/restore", { name: b.dataset.n });
+          toast(result.restart_required ? "Backup restaurado · reinicia BAY-E para aplicar todo ↺" : "Backup restaurado ↺");
         }));
       } catch (e) { /* silencioso */ }
     },

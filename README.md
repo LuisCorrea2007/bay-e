@@ -14,6 +14,7 @@ from a desktop companion into a real home robot without replacing its mind.
 - definitive minimal BAY-E face (`●────●`): procedural blink, gaze, listening, thinking, speaking-state micro-motion and emotion without a fake mouth
 - WebSocket live state/event stream
 - persistent SQLite chat, memories, tasks, settings, emotion history and world data
+- SQLite WAL persistence with integrity-checked full database snapshots and pre-restore safety copies
 - episodic/semantic/person/object/spatial/routine memory CRUD
 - hybrid model router: OpenAI Responses API -> llama.cpp -> Ollama -> deterministic fallback
 - memory-aware and world-aware conversation
@@ -165,6 +166,21 @@ npx cap open android
 
 Capacitor 8 requires Node 22+ for development.
 
+## Database reliability and backups
+
+BAY-E 2.3.2 enables SQLite WAL mode for resilient local persistence. Backups
+created from the local console are now full SQLite snapshots rather than
+memory-only JSON exports, so chats, memories, tasks, settings, world state,
+paired-device records and other Core tables remain together in one consistent
+snapshot. Every snapshot is checked with SQLite `quick_check` before it is
+published.
+
+Before restoring a full snapshot, BAY-E automatically creates a
+`baye-pre-restore-*.sqlite3` safety copy of the currently active database.
+A Core restart is required after full restore so in-memory runtime state is
+reloaded from the restored database. Legacy JSON backups from 2.0-2.3.1 remain
+readable as memory-only imports.
+
 ## REST API versioning
 
 The stable REST surface is mounted under `/api/v1`. The previous `/api`
@@ -245,7 +261,7 @@ node --check static/js/views.js
 uvicorn main:app --reload
 ```
 
-Current development baseline: **v2.3.1**.
+Current development baseline: **v2.3.2**.
 
 ### 2.0 definition of done
 

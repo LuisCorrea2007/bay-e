@@ -14,10 +14,12 @@ de baja concurrencia (una app local). Para producción multi-proceso se puede
 sustituir por aiosqlite manteniendo esta misma interfaz pública.
 """
 import json
+import os
 import sqlite3
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 from .config import DB_PATH
@@ -211,8 +213,10 @@ CREATE INDEX IF NOT EXISTS idx_relationship_event_kind ON relationship_events(ki
 
 
 def _conn() -> sqlite3.Connection:
-    c = sqlite3.connect(DB_PATH, check_same_thread=False)
+    c = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=5.0)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA busy_timeout=5000")
+    c.execute("PRAGMA foreign_keys=ON")
     return c
 
 
@@ -257,6 +261,8 @@ def init_db() -> None:
     global _INIT_DB_DONE
     with _LOCK:
         conn = _conn()
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
         conn.executescript(SCHEMA)
         _migrate_schema(conn)
         conn.commit()
@@ -267,6 +273,88 @@ def init_db() -> None:
             from .seed import _seed      # import diferido para evitar ciclo
             _seed()
         _INIT_DB_DONE = True
+
+
+def database_health() -> dict:
+    """Comprueba integridad y modo de persistencia de la base activa."""
+    with _LOCK:
+        conn = _conn()
+        try:
+            quick = str(conn.execute("PRAGMA quick_check").fetchone()[0])
+            journal = str(conn.execute("PRAGMA journal_mode").fetchone()[0])
+            page_count = int(conn.execute("PRAGMA page_count").fetchone()[0])
+            page_size = int(conn.execute("PRAGMA page_size").fetchone()[0])
+        finally:
+            conn.close()
+    return {
+        "ok": quick.lower() == "ok",
+        "quick_check": quick,
+        "journal_mode": journal,
+        "bytes": page_count * page_size,
+        "path": str(DB_PATH),
+    }
+
+
+def create_database_backup(destination: str | Path) -> dict:
+    """Crea un snapshot SQLite consistente, incluso con WAL activo."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    tmp = destination.with_name(destination.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    with _LOCK:
+        source = _conn()
+        target = sqlite3.connect(tmp)
+        try:
+            source.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            source.backup(target)
+            target.commit()
+            check = str(target.execute("PRAGMA quick_check").fetchone()[0])
+            if check.lower() != "ok":
+                raise RuntimeError(f"backup SQLite inválido: {check}")
+        finally:
+            target.close()
+            source.close()
+    os.replace(tmp, destination)
+    return {
+        "name": destination.name,
+        "path": str(destination),
+        "size": destination.stat().st_size,
+        "ts": destination.stat().st_mtime,
+        "integrity": "ok",
+    }
+
+
+def restore_database_backup(source_path: str | Path) -> dict:
+    """Restaura un snapshot SQLite validado sobre la base activa.
+
+    Los servicios mantienen parte del estado en memoria, por lo que el Core debe
+    reiniciarse después de una restauración completa.
+    """
+    source_path = Path(source_path)
+    if not source_path.is_file():
+        raise FileNotFoundError(source_path)
+    probe = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+    try:
+        check = str(probe.execute("PRAGMA quick_check").fetchone()[0])
+        if check.lower() != "ok":
+            raise RuntimeError(f"backup SQLite inválido: {check}")
+    finally:
+        probe.close()
+
+    with _LOCK:
+        source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+        destination = _conn()
+        try:
+            source.backup(destination)
+            destination.commit()
+            destination.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            post = str(destination.execute("PRAGMA quick_check").fetchone()[0])
+            if post.lower() != "ok":
+                raise RuntimeError(f"base restaurada inválida: {post}")
+        finally:
+            destination.close()
+            source.close()
+    return {"ok": True, "source": source_path.name, "integrity": "ok", "restart_required": True}
 
 
 # ----------------------------------------------------------------- memorias
